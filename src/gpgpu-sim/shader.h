@@ -1420,7 +1420,8 @@ struct shader_core_stats_pod {
     long *n_mem_to_simt;
 
     //memory divergence stats, added by gh
-    unsigned long long m_allocated_cus;
+    unsigned long long m_num_warp_memory_access, m_num_uncoalesced_load;
+    unsigned m_average_coalesced_access_per_load;
     unsigned long long m_average_first_latency, m_average_last_latency;
     unsigned long long m_max_first_latency, m_max_last_latency;
 };
@@ -1484,7 +1485,9 @@ public:
         m_shader_warp_slot_issue_distro.resize( config->num_shader() );
 
         //init memory divergence stats, added by gh
-        m_allocated_cus = 0;
+        m_num_warp_memory_access = 0;
+        m_num_uncoalesced_load = 0;
+        m_average_coalesced_access_per_load = 0;
         m_average_first_latency = 0;
         m_average_last_latency = 0;
         m_max_first_latency = 0;
@@ -1640,7 +1643,7 @@ public:
     void store_ack( class mem_fetch *mf );
     bool warp_waiting_at_mem_barrier( unsigned warp_id );
     void set_max_cta( const kernel_info_t &kernel );
-    void warp_inst_complete(const warp_inst_t &inst);
+    void warp_inst_complete( warp_inst_t &inst);
 
     // accessors
     std::list<unsigned> get_regs_written( const inst_t &fvt ) const;

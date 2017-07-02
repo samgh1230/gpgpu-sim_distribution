@@ -733,9 +733,14 @@ void gpgpu_sim::print_stats()
         icnt_display_overall_stats();
         printf("----------------------------END-of-Interconnect-DETAILS-------------------------\n" );
     }
-    printf("gpgpu-sim allocated cus: %llu\n",m_shader_stats->m_allocated_cus );
-    printf("gppgu-sim Average first latency: %llu\n", m_shader_stats->m_average_first_latency/m_shader_stats->m_allocated_cus);
-    printf("gppgu-sim Average last latency: %llu\n", m_shader_stats->m_average_last_latency/m_shader_stats->m_allocated_cus);
+    //print memory divegence stats, added by gh
+    printf("gpgpu-sim num_warp_memory_access: %llu\n",m_shader_stats->m_num_warp_memory_access );
+    if (m_shader_stats->m_num_warp_memory_access) {
+        printf("gpgpu-sim Average coalesed accesses: %f\n", (float)m_shader_stats->m_average_coalesced_access_per_load/m_shader_stats->m_num_warp_memory_access);
+        printf("gpgpu-sim Percentage of uncoalesed load: %f\n", (float)m_shader_stats->m_num_uncoalesced_load/m_shader_stats->m_num_warp_memory_access*100);
+        printf("gppgu-sim Average first latency: %f\n", (float)m_shader_stats->m_average_first_latency/m_shader_stats->m_num_warp_memory_access);
+        printf("gppgu-sim Average last latency: %f\n", (float)m_shader_stats->m_average_last_latency/m_shader_stats->m_num_warp_memory_access);
+    }
     printf("gppgu-sim max first latency: %llu\n", m_shader_stats->m_max_first_latency);
     printf("gppgu-sim max last latency: %llu\n", m_shader_stats->m_max_last_latency);
 }

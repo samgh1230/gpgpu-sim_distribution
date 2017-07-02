@@ -673,7 +673,7 @@ void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
 {
     execute_warp_inst_t(inst);
     if( inst.is_load() || inst.is_store() )
-        inst.generate_mem_accesses();
+        inst.generate_mem_accesses();// model memory access
 }
 
 void shader_core_ctx::issue_warp( register_set& pipe_reg_set, const warp_inst_t* next_inst, const active_mask_t &active_mask, unsigned warp_id )
@@ -1202,7 +1202,7 @@ void ldst_unit::get_L1T_sub_stats(struct cache_sub_stats &css) const{
         m_L1T->get_sub_stats(css);
 }
 
-void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
+void shader_core_ctx::warp_inst_complete( warp_inst_t &inst)
 {
    #if 0
       printf("[warp_inst_complete] uid=%u core=%u warp=%u pc=%#x @ time=%llu issued@%llu\n",
@@ -1223,6 +1223,37 @@ void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
   m_stats->m_num_sim_winsn[m_sid]++;
   m_gpu->gpu_sim_insn += inst.active_count();
   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
+
+  //set first latency, added by gh
+  /*if (inst.is_load() || inst.is_store()){*/
+    /*if (!inst.is_first_latency_set()) {*/
+        /*inst.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());*/
+        /*inst.set_first_flag();*/
+    /*}*/
+    /*else {*/
+        /*unsigned long long latency = gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle();*/
+        /*if (latency < inst.get_first_latency())*/
+            /*inst.set_first_latency(latency);*/
+    /*}*/
+  /*}*/
+
+  //if memory op, set last latency, added by gh
+   if(inst.is_load()||inst.is_store())
+       inst.set_last_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());
+
+  //collect latency, added by gh
+  if ((inst.is_load()) && (inst.space.get_type() == local_space || inst.space.get_type() == global_space)) {
+      m_stats->m_num_warp_memory_access ++;
+      if (inst.get_num_access() > 1)
+          m_stats->m_num_uncoalesced_load ++;
+      m_stats->m_average_coalesced_access_per_load += inst.get_num_access();
+      m_stats->m_average_first_latency += inst.get_first_latency();
+      m_stats->m_average_last_latency += inst.get_last_latency();
+      unsigned long long max = m_stats->m_max_first_latency;
+      m_stats->m_max_first_latency = (max<inst.get_first_latency())?inst.get_first_latency():max;
+      max = m_stats->m_max_last_latency;
+      m_stats->m_max_last_latency = (max<inst.get_last_latency())?inst.get_last_latency():max;
+  }
 }
 
 void shader_core_ctx::writeback()
@@ -1303,6 +1334,19 @@ ldst_unit::process_cache_access( cache_t* cache,
     if ( status == HIT ) {
         assert( !read_sent );
         inst.accessq_pop_back();
+
+        //set first latency, if not, added by gh
+        if (!inst.is_first_latency_set()) {
+            inst.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());
+            inst.set_first_flag();
+        }
+        else {
+            unsigned long long latency = gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle();
+            if (latency < inst.get_first_latency())
+                inst.set_first_latency(latency);
+        }
+
+
         if ( inst.is_load() ) {
             for ( unsigned r=0; r < 4; r++)
                 if (inst.out[r] > 0)
@@ -1318,7 +1362,10 @@ ldst_unit::process_cache_access( cache_t* cache,
     } else {
         assert( status == MISS || status == HIT_RESERVED );
         //inst.clear_active( access.get_warp_mask() ); // threads in mf writeback when mf returns
+        //
+
         inst.accessq_pop_back();
+
     }
     if( !inst.accessq_empty() )
         result = BK_CONF;
@@ -1404,7 +1451,18 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
            mem_fetch *mf = m_mf_allocator->alloc(inst,access);
            m_icnt->push(mf);
            inst.accessq_pop_back();
-           //inst.clear_active( access.get_warp_mask() );
+            // set first latency, if not, added by gh
+            // //set first latency, if not, added by gh
+           /*if (!inst.is_first_latency_set()) {*/
+              /*inst.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());*/
+              /*inst.set_first_flag();*/
+            /*}*/
+            /*else {*/
+                /*unsigned long long latency = gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle();*/
+                /*if (latency < inst.get_first_latency())*/
+                    /*inst.set_first_latency(latency);*/
+            /*}*/
+            //inst.clear_active( access.get_warp_mask() );
            if( inst.is_load() ) {
               for( unsigned r=0; r < 4; r++)
                   if(inst.out[r] > 0)
@@ -1695,9 +1753,20 @@ void ldst_unit::writeback()
                     }
                 }
             }
+            //set first latency, if not, added by gh
+            if (!m_next_wb.is_first_latency_set()) {
+                m_next_wb.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - m_next_wb.get_issue_cycle());
+                m_next_wb.set_first_flag();
+            }
+            else {
+                unsigned long long latency = gpu_sim_cycle + gpu_tot_sim_cycle - m_next_wb.get_issue_cycle();
+                if (latency < m_next_wb.get_first_latency())
+                    m_next_wb.set_first_latency(latency);
+            }
             if( insn_completed ) {
                 m_core->warp_inst_complete(m_next_wb);
             }
+
             m_next_wb.clear();
             m_last_inst_gpu_sim_cycle = gpu_sim_cycle;
             m_last_inst_gpu_tot_sim_cycle = gpu_tot_sim_cycle;
@@ -3143,8 +3212,8 @@ bool opndcoll_rfu_t::collector_unit_t::allocate( register_set* pipeline_reg_set,
       //move_warp(m_warp,*pipeline_reg);
       pipeline_reg_set->move_out_to(m_warp);
       //cu allocated, added by gh
-      m_allocation_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle ;
-      m_rfu->shader_core()->get_stats()->m_allocated_cus ++;
+      //m_allocation_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle ;
+      //m_rfu->shader_core()->get_stats()->m_allocated_cus ++;
       m_allocated = true;
       return true;
    }
@@ -3153,23 +3222,23 @@ bool opndcoll_rfu_t::collector_unit_t::allocate( register_set* pipeline_reg_set,
 //moved from header file, added by gh
 void opndcoll_rfu_t::collector_unit_t::collect_operand( unsigned op )
 {
-      shader_core_stats* stats = m_rfu->shader_core()->get_stats();
+      //shader_core_stats* stats = m_rfu->shader_core()->get_stats();
       m_not_ready.reset(op);
 
       //collect memory divergence stats, added by gh
-      if((!m_fetched_first) && m_allocated) {
-          m_fetched_first = true;
-          m_first_opnd_latency = gpu_sim_cycle + gpu_tot_sim_cycle - m_allocation_timestamp;
-          stats->m_average_first_latency += m_first_opnd_latency;
-          unsigned long long max = stats->m_max_first_latency;
-          stats->m_max_first_latency = (max<m_first_opnd_latency)?m_first_opnd_latency:max;
-      }
-      if(m_not_ready.none() && m_allocated) {
-          m_last_opnd_latency = gpu_sim_cycle + gpu_tot_sim_cycle - m_allocation_timestamp;
-          stats->m_average_last_latency += m_last_opnd_latency;
-          unsigned long long max = stats->m_max_last_latency;
-          stats->m_max_last_latency = (max<m_last_opnd_latency)?m_last_opnd_latency:max;
-      }
+      //if((!m_fetched_first) && m_allocated) {
+          //m_fetched_first = true;
+          //m_first_opnd_latency = gpu_sim_cycle + gpu_tot_sim_cycle - m_allocation_timestamp;
+          //stats->m_average_first_latency += m_first_opnd_latency;
+          //unsigned long long max = stats->m_max_first_latency;
+          //stats->m_max_first_latency = (max<m_first_opnd_latency)?m_first_opnd_latency:max;
+      //}
+      //if(m_not_ready.none() && m_allocated) {
+          //m_last_opnd_latency = gpu_sim_cycle + gpu_tot_sim_cycle - m_allocation_timestamp;
+          //stats->m_average_last_latency += m_last_opnd_latency;
+          //unsigned long long max = stats->m_max_last_latency;
+          //stats->m_max_last_latency = (max<m_last_opnd_latency)?m_last_opnd_latency:max;
+      //}
 }
 void opndcoll_rfu_t::collector_unit_t::dispatch()
 {

@@ -70,7 +70,7 @@ typedef unsigned long long new_addr_type;
 typedef unsigned address_type;
 typedef unsigned addr_t;
 
-// the following are operations the timing model can see 
+// the following are operations the timing model can see
 
 enum uarch_op_t {
    NO_OP=-1,
@@ -180,10 +180,10 @@ public:
    void dec_running()
    {
        assert( m_num_cores_running > 0 );
-       m_num_cores_running--; 
+       m_num_cores_running--;
    }
    bool running() const { return m_num_cores_running>0; }
-   bool done() const 
+   bool done() const
    {
        return no_more_ctas_to_run() && !running();
    }
@@ -198,31 +198,31 @@ public:
    size_t threads_per_cta() const
    {
       return m_block_dim.x * m_block_dim.y * m_block_dim.z;
-   } 
+   }
 
    dim3 get_grid_dim() const { return m_grid_dim; }
    dim3 get_cta_dim() const { return m_block_dim; }
 
-   void increment_cta_id() 
-   { 
-      increment_x_then_y_then_z(m_next_cta,m_grid_dim); 
+   void increment_cta_id()
+   {
+      increment_x_then_y_then_z(m_next_cta,m_grid_dim);
       m_next_tid.x=0;
       m_next_tid.y=0;
       m_next_tid.z=0;
    }
    dim3 get_next_cta_id() const { return m_next_cta; }
-   bool no_more_ctas_to_run() const 
+   bool no_more_ctas_to_run() const
    {
       return (m_next_cta.x >= m_grid_dim.x || m_next_cta.y >= m_grid_dim.y || m_next_cta.z >= m_grid_dim.z );
    }
 
    void increment_thread_id() { increment_x_then_y_then_z(m_next_tid,m_block_dim); }
    dim3 get_next_thread_id_3d() const  { return m_next_tid; }
-   unsigned get_next_thread_id() const 
-   { 
+   unsigned get_next_thread_id() const
+   {
       return m_next_tid.x + m_block_dim.x*m_next_tid.y + m_block_dim.x*m_block_dim.y*m_next_tid.z;
    }
-   bool more_threads_in_cta() const 
+   bool more_threads_in_cta() const
    {
       return m_next_tid.z < m_block_dim.z && m_next_tid.y < m_block_dim.y && m_next_tid.x < m_block_dim.x;
    }
@@ -253,11 +253,11 @@ private:
 };
 
 struct core_config {
-    core_config() 
-    { 
-        m_valid = false; 
-        num_shmem_bank=16; 
-        shmem_limited_broadcast = false; 
+    core_config()
+    {
+        m_valid = false;
+        num_shmem_bank=16;
+        shmem_limited_broadcast = false;
         gpgpu_shmem_sizeDefault=(unsigned)-1;
         gpgpu_shmem_sizePrefL1=(unsigned)-1;
         gpgpu_shmem_sizePrefShared=(unsigned)-1;
@@ -278,7 +278,7 @@ struct core_config {
     {
         return ((addr/WORD_SIZE) % num_shmem_bank);
     }
-    unsigned mem_warp_parts;  
+    unsigned mem_warp_parts;
     mutable unsigned gpgpu_shmem_size;
     unsigned gpgpu_shmem_sizeDefault;
     unsigned gpgpu_shmem_sizePrefL1;
@@ -397,22 +397,22 @@ struct textureReference {
 
 #endif
 
-// Struct that record other attributes in the textureReference declaration 
+// Struct that record other attributes in the textureReference declaration
 // - These attributes are passed thru __cudaRegisterTexture()
 struct textureReferenceAttr {
-    const struct textureReference *m_texref; 
-    int m_dim; 
-    enum cudaTextureReadMode m_readmode; 
-    int m_ext; 
-    textureReferenceAttr(const struct textureReference *texref, 
-                         int dim, 
-                         enum cudaTextureReadMode readmode, 
+    const struct textureReference *m_texref;
+    int m_dim;
+    enum cudaTextureReadMode m_readmode;
+    int m_ext;
+    textureReferenceAttr(const struct textureReference *texref,
+                         int dim,
+                         enum cudaTextureReadMode readmode,
                          int ext)
-    : m_texref(texref), m_dim(dim), m_readmode(readmode), m_ext(ext) 
+    : m_texref(texref), m_dim(dim), m_readmode(readmode), m_ext(ext)
     {  }
 };
 
-class gpgpu_functional_sim_config 
+class gpgpu_functional_sim_config
 {
 public:
     void reg_options(class OptionParser * opp);
@@ -452,7 +452,7 @@ public:
     void  memcpy_to_gpu( size_t dst_start_addr, const void *src, size_t count );
     void  memcpy_from_gpu( void *dst, size_t src_start_addr, size_t count );
     void  memcpy_gpu_to_gpu( size_t dst, size_t src, size_t count );
-    
+
     class memory_space *get_global_memory() { return m_global_mem; }
     class memory_space *get_tex_memory() { return m_tex_mem; }
     class memory_space *get_surf_memory() { return m_surf_mem; }
@@ -497,18 +497,18 @@ protected:
     class memory_space *m_global_mem;
     class memory_space *m_tex_mem;
     class memory_space *m_surf_mem;
-    
+
     unsigned long long m_dev_malloc;
-    
+
     std::map<std::string, const struct textureReference*> m_NameToTextureRef;
     std::map<const struct textureReference*,const struct cudaArray*> m_TextureRefToCudaArray;
     std::map<const struct textureReference*, const struct textureInfo*> m_TextureRefToTexureInfo;
     std::map<const struct textureReference*, const struct textureReferenceAttr*> m_TextureRefToAttribute;
 };
 
-struct gpgpu_ptx_sim_kernel_info 
+struct gpgpu_ptx_sim_kernel_info
 {
-   // Holds properties of the kernel (Kernel's resource use). 
+   // Holds properties of the kernel (Kernel's resource use).
    // These will be set to zero if a ptxinfo file is not present.
    int lmem;
    int smem;
@@ -539,14 +539,14 @@ public:
    memory_space_t( const enum _memory_space_t &from ) { m_type = from; m_bank = 0; }
    bool operator==( const memory_space_t &x ) const { return (m_bank == x.m_bank) && (m_type == x.m_type); }
    bool operator!=( const memory_space_t &x ) const { return !(*this == x); }
-   bool operator<( const memory_space_t &x ) const 
-   { 
+   bool operator<( const memory_space_t &x ) const
+   {
       if(m_type < x.m_type)
          return true;
       else if(m_type > x.m_type)
          return false;
       else if( m_bank < x.m_bank )
-         return true; 
+         return true;
       return false;
    }
    enum _memory_space_t get_type() const { return m_type; }
@@ -579,7 +579,7 @@ MA_TUP_BEGIN( mem_access_type ) \
    MA_TUP( L1_WR_ALLOC_R ), \
    MA_TUP( L2_WR_ALLOC_R ), \
    MA_TUP( NUM_MEM_ACCESS_TYPE ) \
-MA_TUP_END( mem_access_type ) 
+MA_TUP_END( mem_access_type )
 
 #define MA_TUP_BEGIN(X) enum X {
 #define MA_TUP(X) X
@@ -589,17 +589,17 @@ MEM_ACCESS_TYPE_TUP_DEF
 #undef MA_TUP
 #undef MA_TUP_END
 
-const char * mem_access_type_str(enum mem_access_type access_type); 
+const char * mem_access_type_str(enum mem_access_type access_type);
 
 enum cache_operator_type {
-    CACHE_UNDEFINED, 
+    CACHE_UNDEFINED,
 
     // loads
     CACHE_ALL,          // .ca
     CACHE_LAST_USE,     // .lu
     CACHE_VOLATILE,     // .cv
-                       
-    // loads and stores 
+
+    // loads and stores
     CACHE_STREAMING,    // .cs
     CACHE_GLOBAL,       // .cg
 
@@ -611,8 +611,8 @@ enum cache_operator_type {
 class mem_access_t {
 public:
    mem_access_t() { init(); }
-   mem_access_t( mem_access_type type, 
-                 new_addr_type address, 
+   mem_access_t( mem_access_type type,
+                 new_addr_type address,
                  unsigned size,
                  bool wr )
    {
@@ -622,10 +622,10 @@ public:
        m_req_size = size;
        m_write = wr;
    }
-   mem_access_t( mem_access_type type, 
-                 new_addr_type address, 
-                 unsigned size, 
-                 bool wr, 
+   mem_access_t( mem_access_type type,
+                 new_addr_type address,
+                 unsigned size,
+                 bool wr,
                  const active_mask_t &active_mask,
                  const mem_access_byte_mask_t &byte_mask )
     : m_warp_mask(active_mask), m_byte_mask(byte_mask)
@@ -663,7 +663,7 @@ public:
    }
 
 private:
-   void init() 
+   void init()
    {
       m_uid=++sm_next_access_uid;
       m_addr=0;
@@ -724,9 +724,9 @@ public:
         mem_op=NOT_TEX;
         num_operands=0;
         num_regs=0;
-        memset(out, 0, sizeof(unsigned)); 
-        memset(in, 0, sizeof(unsigned)); 
-        is_vectorin=0; 
+        memset(out, 0, sizeof(unsigned));
+        memset(in, 0, sizeof(unsigned));
+        is_vectorin=0;
         is_vectorout=0;
         space = memory_space_t();
         cache_op = CACHE_UNDEFINED;
@@ -739,7 +739,7 @@ public:
         isize=0;
     }
     bool valid() const { return m_decoded; }
-    virtual void print_insn( FILE *fp ) const 
+    virtual void print_insn( FILE *fp ) const
     {
         fprintf(fp," [inst @ pc=0x%04x] ", pc );
     }
@@ -753,7 +753,7 @@ public:
     void set_bar_count(unsigned count) {bar_count=count;}
 
     address_type pc;        // program counter address of instruction
-    unsigned isize;         // size of instruction in bytes 
+    unsigned isize;         // size of instruction in bytes
     op_type op;             // opcode (uarch visible)
 
     barrier_type bar_type;
@@ -765,12 +765,12 @@ public:
     special_ops sp_op;           // code (uarch visible) identify if int_alu, fp_alu, int_mul ....
     operation_pipeline op_pipe;  // code (uarch visible) identify the pipeline of the operation (SP, SFU or MEM)
     mem_operation mem_op;        // code (uarch visible) identify memory type
-    _memory_op_t memory_op; // memory_op used by ptxplus 
+    _memory_op_t memory_op; // memory_op used by ptxplus
     unsigned num_operands;
     unsigned num_regs; // count vector operand as one register operand
 
     address_type reconvergence_pc; // -1 => not a branch, -2 => use function return address
-    
+
     unsigned out[4];
     unsigned in[4];
     unsigned char is_vectorin;
@@ -783,7 +783,7 @@ public:
         int src[MAX_REG_OPERANDS];
     } arch_reg;
     //int arch_reg[MAX_REG_OPERANDS]; // register number for bank conflict evaluation
-    unsigned latency; // operation latency 
+    unsigned latency; // operation latency
     unsigned initiation_interval;
 
     unsigned data_size; // what is the size of the word being operated on?
@@ -805,23 +805,33 @@ const unsigned MAX_ACCESSES_PER_INSN_PER_THREAD = 8;
 class warp_inst_t: public inst_t {
 public:
     // constructors
-    warp_inst_t() 
+    warp_inst_t()
     {
         m_uid=0;
-        m_empty=true; 
-        m_config=NULL; 
+        m_empty=true;
+        m_config=NULL;
     }
-    warp_inst_t( const core_config *config ) 
-    { 
+    warp_inst_t( const core_config *config )
+    {
         m_uid=0;
-        assert(config->warp_size<=MAX_WARP_SIZE); 
+        assert(config->warp_size<=MAX_WARP_SIZE);
         m_config=config;
-        m_empty=true; 
+        m_empty=true;
         m_isatomic=false;
         m_per_scalar_thread_valid=false;
         m_mem_accesses_created=false;
         m_cache_hit=false;
         m_is_printf=false;
+
+        //memory divergence, added by gh
+        m_is_first_latency_set = false;
+        m_first_latency = 1;
+        m_last_latency = 0;
+        m_first_ld_latency = 0;
+        m_last_ld_latency  =0;
+        m_first_st_latency = 0;
+        m_last_st_latency = 0;
+
     }
     virtual ~warp_inst_t(){
     }
@@ -830,14 +840,14 @@ public:
     void broadcast_barrier_reduction( const active_mask_t& access_mask);
     void do_atomic(bool forceDo=false);
     void do_atomic( const active_mask_t& access_mask, bool forceDo=false );
-    void clear() 
-    { 
-        m_empty=true; 
+    void clear()
+    {
+        m_empty=true;
     }
-    void issue( const active_mask_t &mask, unsigned warp_id, unsigned long long cycle, int dynamic_warp_id ) 
+    void issue( const active_mask_t &mask, unsigned warp_id, unsigned long long cycle, int dynamic_warp_id )
     {
         m_warp_active_mask = mask;
-        m_warp_issued_mask = mask; 
+        m_warp_issued_mask = mask;
         m_uid = ++sm_next_uid;
         m_warp_id = warp_id;
         m_dynamic_warp_id = dynamic_warp_id;
@@ -850,9 +860,9 @@ public:
     {
     	return m_warp_active_mask;
     }
-    void completed( unsigned long long cycle ) const;  // stat collection: called when the instruction is completed  
+    void completed( unsigned long long cycle ) const;  // stat collection: called when the instruction is completed
 
-    void set_addr( unsigned n, new_addr_type addr ) 
+    void set_addr( unsigned n, new_addr_type addr )
     {
         if( !m_per_scalar_thread_valid ) {
             m_per_scalar_thread.resize(m_config->warp_size);
@@ -870,6 +880,16 @@ public:
         for(unsigned i=0; i<num_addrs; i++)
             m_per_scalar_thread[n].memreqaddr[i] = addr[i];
     }
+
+    //added by gh
+    unsigned long long get_issue_cycle() const {return issue_cycle;}
+    bool is_first_latency_set() const {return m_is_first_latency_set;}
+    void set_first_flag() {m_is_first_latency_set = true;}
+    unsigned long long get_first_latency() const {return m_first_latency;}
+    unsigned long long get_last_latency() const {return m_last_latency;}
+    void set_first_latency(unsigned long long latency) {m_first_latency = latency;}
+    void set_last_latency(unsigned long long latency) {m_last_latency = latency;}
+    unsigned get_num_access() const {return m_num_coalesced_access;}
 
     struct transaction_info {
         std::bitset<4> chunks; // bitmask: 32-byte chunks accessed
@@ -889,9 +909,9 @@ public:
     void memory_coalescing_arch_13_atomic( bool is_write, mem_access_type access_type );
     void memory_coalescing_arch_13_reduce_and_send( bool is_write, mem_access_type access_type, const transaction_info &info, new_addr_type addr, unsigned segment_size );
 
-    void add_callback( unsigned lane_id, 
+    void add_callback( unsigned lane_id,
                        void (*function)(const class inst_t*, class ptx_thread_info*),
-                       const inst_t *inst, 
+                       const inst_t *inst,
                        class ptx_thread_info *thread,
                        bool atomic)
     {
@@ -910,7 +930,7 @@ public:
     void set_not_active( unsigned lane_id );
 
     // accessors
-    virtual void print_insn(FILE *fp) const 
+    virtual void print_insn(FILE *fp) const
     {
         fprintf(fp," [inst @ pc=0x%04x] ", pc );
         for (int i=(int)m_config->warp_size-1; i>=0; i--)
@@ -918,21 +938,21 @@ public:
     }
     bool active( unsigned thread ) const { return m_warp_active_mask.test(thread); }
     unsigned active_count() const { return m_warp_active_mask.count(); }
-    unsigned issued_count() const { assert(m_empty == false); return m_warp_issued_mask.count(); }  // for instruction counting 
+    unsigned issued_count() const { assert(m_empty == false); return m_warp_issued_mask.count(); }  // for instruction counting
     bool empty() const { return m_empty; }
-    unsigned warp_id() const 
-    { 
+    unsigned warp_id() const
+    {
         assert( !m_empty );
-        return m_warp_id; 
+        return m_warp_id;
     }
-    unsigned dynamic_warp_id() const 
-    { 
+    unsigned dynamic_warp_id() const
+    {
         assert( !m_empty );
-        return m_dynamic_warp_id; 
+        return m_dynamic_warp_id;
     }
     bool has_callback( unsigned n ) const
     {
-        return m_warp_active_mask[n] && m_per_scalar_thread_valid && 
+        return m_warp_active_mask[n] && m_per_scalar_thread_valid &&
             (m_per_scalar_thread[n].callback.function!=NULL);
     }
     new_addr_type get_addr( unsigned n ) const
@@ -951,8 +971,8 @@ public:
     void accessq_pop_back() { m_accessq.pop_back(); }
 
     bool dispatch_delay()
-    { 
-        if( cycles > 0 ) 
+    {
+        if( cycles > 0 )
             cycles--;
         return cycles > 0;
     }
@@ -975,10 +995,17 @@ protected:
     bool m_isatomic;
     bool m_is_printf;
     unsigned m_warp_id;
-    unsigned m_dynamic_warp_id; 
-    const core_config *m_config; 
+    unsigned m_dynamic_warp_id;
+    const core_config *m_config;
     active_mask_t m_warp_active_mask; // dynamic active mask for timing model (after predication)
     active_mask_t m_warp_issued_mask; // active mask at issue (prior to predication test) -- for instruction counting
+
+    //memory divergence stats, added by gh
+    bool m_is_first_latency_set;
+    unsigned m_num_coalesced_access;
+    unsigned long long m_first_latency, m_last_latency; //load + store
+    unsigned long long m_first_ld_latency, m_last_ld_latency; // load
+    unsigned long long m_first_st_latency, m_last_st_latency; // store
 
     struct per_thread_info {
         per_thread_info() {
@@ -1002,11 +1029,11 @@ size_t get_kernel_code_size( class function_info *entry );
 
 /*
  * This abstract class used as a base for functional and performance and simulation, it has basic functional simulation
- * data structures and procedures. 
+ * data structures and procedures.
  */
 class core_t {
     public:
-        core_t( gpgpu_sim *gpu, 
+        core_t( gpgpu_sim *gpu,
                 kernel_info_t *kernel,
                 unsigned warp_size,
                 unsigned threads_per_shader )
