@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2011, Tor M. Aamodt, Ali Bakhoda, Wilson W.L. Fung,
-// George L. Yuan, Jimmy Kwa 
+// George L. Yuan, Jimmy Kwa
 // The University of British Columbia
 // All rights reserved.
 //
@@ -52,7 +52,7 @@
 int gpgpu_ptx_instruction_classification;
 void ** g_inst_classification_stat = NULL;
 void ** g_inst_op_classification_stat= NULL;
-int g_ptx_kernel_count = -1; // used for classification stat collection purposes 
+int g_ptx_kernel_count = -1; // used for classification stat collection purposes
 int g_debug_execution = 0;
 int g_debug_thread_uid = 0;
 addr_t g_debug_pc = 0xBEEF1518;
@@ -97,8 +97,8 @@ void gpgpu_t::gpgpu_ptx_sim_bindNameToTexture(const char* name, const struct tex
 {
    std::string texname(name);
    m_NameToTextureRef[texname] = texref;
-   const textureReferenceAttr *texAttr = new textureReferenceAttr(texref, dim, (enum cudaTextureReadMode)readmode, ext); 
-   m_TextureRefToAttribute[texref] = texAttr; 
+   const textureReferenceAttr *texAttr = new textureReferenceAttr(texref, dim, (enum cudaTextureReadMode)readmode, ext);
+   m_TextureRefToAttribute[texref] = texAttr;
 }
 
 const char* gpgpu_t::gpgpu_ptx_sim_findNamefromTexture(const struct textureReference* texref)
@@ -164,7 +164,7 @@ void gpgpu_t::gpgpu_ptx_sim_bindTextureToArray(const struct textureReference* te
    printf("GPGPU-Sim PTX:   Texel size = %d bytes; texel_size_numbits = %d\n", texel_size, intLOGB2(texel_size));
    printf("GPGPU-Sim PTX:   Binding texture to array starting at devPtr32 = 0x%x\n", array->devPtr32);
    printf("GPGPU-Sim PTX:   Texel size = %d bytes\n", texel_size);
-   struct textureInfo* texInfo = (struct textureInfo*) malloc(sizeof(struct textureInfo)); 
+   struct textureInfo* texInfo = (struct textureInfo*) malloc(sizeof(struct textureInfo));
    texInfo->Tx = Tx;
    texInfo->Ty = Ty;
    texInfo->Tx_numbits = intLOGB2(Tx);
@@ -174,7 +174,7 @@ void gpgpu_t::gpgpu_ptx_sim_bindTextureToArray(const struct textureReference* te
    m_TextureRefToTexureInfo[texref] = texInfo;
 }
 
-unsigned g_assemble_code_next_pc=0; 
+unsigned g_assemble_code_next_pc=0;
 std::map<unsigned,function_info*> g_pc_to_finfo;
 std::vector<ptx_instruction*> function_info::s_g_pc_to_insn;
 
@@ -197,9 +197,9 @@ void function_info::ptx_assemble()
 
    addr_t PC = g_assemble_code_next_pc; // globally unique address (across functions)
    // start function on an aligned address
-   for( unsigned i=0; i < (PC%MAX_INST_SIZE); i++ ) 
+   for( unsigned i=0; i < (PC%MAX_INST_SIZE); i++ )
       s_g_pc_to_insn.push_back((ptx_instruction*)NULL);
-   PC += PC%MAX_INST_SIZE; 
+   PC += PC%MAX_INST_SIZE;
    m_start_PC = PC;
 
    addr_t n=0; // offset in m_instr_mem
@@ -248,11 +248,11 @@ void function_info::ptx_assemble()
 
    create_basic_blocks();
    connect_basic_blocks();
-   bool modified = false; 
+   bool modified = false;
    do {
       find_dominators();
       find_idominators();
-      modified = connect_break_targets(); 
+      modified = connect_break_targets();
    } while (modified == true);
 
    if ( g_debug_execution>=50 ) {
@@ -296,7 +296,7 @@ bool isspace_shared( unsigned smid, addr_t addr )
 {
    addr_t start = SHARED_GENERIC_START + smid*SHARED_MEM_SIZE_MAX;
    addr_t end = SHARED_GENERIC_START + (smid+1)*SHARED_MEM_SIZE_MAX;
-   if( (addr >= end) || (addr < start) ) 
+   if( (addr >= end) || (addr < start) )
       return false;
    return true;
 }
@@ -325,7 +325,7 @@ addr_t generic_to_shared( unsigned smid, addr_t addr )
 
 addr_t local_to_generic( unsigned smid, unsigned hwtid, addr_t addr )
 {
-   assert(addr < LOCAL_MEM_SIZE_MAX); 
+   assert(addr < LOCAL_MEM_SIZE_MAX);
    return LOCAL_GENERIC_START + (TOTAL_LOCAL_MEM_PER_SM * smid) + (LOCAL_MEM_SIZE_MAX * hwtid) + addr;
 }
 
@@ -333,7 +333,7 @@ bool isspace_local( unsigned smid, unsigned hwtid, addr_t addr )
 {
    addr_t start = LOCAL_GENERIC_START + (TOTAL_LOCAL_MEM_PER_SM * smid) + (LOCAL_MEM_SIZE_MAX * hwtid);
    addr_t end   = LOCAL_GENERIC_START + (TOTAL_LOCAL_MEM_PER_SM * smid) + (LOCAL_MEM_SIZE_MAX * (hwtid+1));
-   if( (addr >= end) || (addr < start) ) 
+   if( (addr >= end) || (addr < start) )
       return false;
    return true;
 }
@@ -382,7 +382,7 @@ void gpgpu_t::memcpy_to_gpu( size_t dst_start_addr, const void *src, size_t coun
       fflush(stdout);
    }
    char *src_data = (char*)src;
-   for (unsigned n=0; n < count; n ++ ) 
+   for (unsigned n=0; n < count; n ++ )
       m_global_mem->write(dst_start_addr+n,1, src_data+n,NULL,NULL);
    if(g_debug_execution >= 3) {
       printf( " done.\n");
@@ -397,7 +397,7 @@ void gpgpu_t::memcpy_from_gpu( void *dst, size_t src_start_addr, size_t count )
       fflush(stdout);
    }
    unsigned char *dst_data = (unsigned char*)dst;
-   for (unsigned n=0; n < count; n ++ ) 
+   for (unsigned n=0; n < count; n ++ )
       m_global_mem->read(src_start_addr+n,1,dst_data+n);
    if(g_debug_execution >= 3) {
       printf( " done.\n");
@@ -414,7 +414,7 @@ void gpgpu_t::memcpy_gpu_to_gpu( size_t dst, size_t src, size_t count )
    }
    for (unsigned n=0; n < count; n ++ ) {
       unsigned char tmp;
-      m_global_mem->read(src+n,1,&tmp); 
+      m_global_mem->read(src+n,1,&tmp);
       m_global_mem->write(dst+n,1, &tmp,NULL,NULL);
    }
    if(g_debug_execution >= 3) {
@@ -431,7 +431,7 @@ void gpgpu_t::gpu_memset( size_t dst_start_addr, int c, size_t count )
       fflush(stdout);
    }
    unsigned char c_value = (unsigned char)c;
-   for (unsigned n=0; n < count; n ++ ) 
+   for (unsigned n=0; n < count; n ++ )
       m_global_mem->write(dst_start_addr+n,1,&c_value,NULL,NULL);
    if(g_debug_execution >= 3) {
       printf( " done.\n");
@@ -769,7 +769,7 @@ void ptx_instruction::set_opcode_and_latency()
 	  initiation_interval = dp_init[2];
       op = SFU_OP;
       break;
-   default: 
+   default:
        break;
    }
 	set_fp_or_int_archop();
@@ -791,30 +791,30 @@ static unsigned datatype2size( unsigned data_type )
    switch ( data_type ) {
       case B8_TYPE:
       case S8_TYPE:
-      case U8_TYPE: 
+      case U8_TYPE:
          data_size = 1; break;
       case B16_TYPE:
       case S16_TYPE:
       case U16_TYPE:
-      case F16_TYPE: 
+      case F16_TYPE:
          data_size = 2; break;
       case B32_TYPE:
       case S32_TYPE:
       case U32_TYPE:
-      case F32_TYPE: 
+      case F32_TYPE:
          data_size = 4; break;
       case B64_TYPE:
       case BB64_TYPE:
       case S64_TYPE:
       case U64_TYPE:
-      case F64_TYPE: 
+      case F64_TYPE:
       case FF64_TYPE:
          data_size = 8; break;
-      case BB128_TYPE: 
+      case BB128_TYPE:
          data_size = 16; break;
       default: assert(0); break;
    }
-   return data_size; 
+   return data_size;
 }
 
 void ptx_instruction::pre_decode()
@@ -860,12 +860,12 @@ void ptx_instruction::pre_decode()
    case CV_OPTION: cache_op = CACHE_VOLATILE; break;
    case WB_OPTION: cache_op = CACHE_WRITE_BACK; break;
    case WT_OPTION: cache_op = CACHE_WRITE_THROUGH; break;
-   default: 
-      if( m_opcode == LD_OP || m_opcode == LDU_OP ) 
+   default:
+      if( m_opcode == LD_OP || m_opcode == LDU_OP )
          cache_op = CACHE_ALL;
-      else if( m_opcode == ST_OP ) 
+      else if( m_opcode == ST_OP )
          cache_op = CACHE_WRITE_BACK;
-      else if( m_opcode == ATOM_OP ) 
+      else if( m_opcode == ATOM_OP )
          cache_op = CACHE_GLOBAL;
       break;
    }
@@ -889,7 +889,7 @@ void ptx_instruction::pre_decode()
             if( num_elem >= 2 ) out[1] = o.reg2_num();
             if( num_elem >= 3 ) out[2] = o.reg3_num();
             if( num_elem >= 4 ) out[3] = o.reg4_num();
-            for (int i = 0; i < num_elem; i++) 
+            for (int i = 0; i < num_elem; i++)
                arch_reg.dst[i] = o.arch_reg_num(i);
          }
       } else {
@@ -900,7 +900,7 @@ void ptx_instruction::pre_decode()
             case 0: in[0] = reg_num; break;
             case 1: in[1] = reg_num; break;
             case 2: in[2] = reg_num; break;
-            default: break; 
+            default: break;
             }
             m++;
          } else if ( o.is_vector() ) {
@@ -911,7 +911,7 @@ void ptx_instruction::pre_decode()
             if( num_elem >= 2 ) in[1] = o.reg2_num();
             if( num_elem >= 3 ) in[2] = o.reg3_num();
             if( num_elem >= 4 ) in[3] = o.reg4_num();
-            for (int i = 0; i < num_elem; i++) 
+            for (int i = 0; i < num_elem; i++)
                arch_reg.src[i] = o.arch_reg_num(i);
             m+=4;
          }
@@ -993,13 +993,13 @@ void function_info::add_param_data( unsigned argn, struct gpgpu_ptx_sim_arg *arg
 {
    const void *data = args->m_start;
 
-   bool scratchpad_memory_param = false; // Is this parameter in CUDA shared memory or OpenCL local memory 
+   bool scratchpad_memory_param = false; // Is this parameter in CUDA shared memory or OpenCL local memory
 
    std::map<unsigned,param_info>::iterator i=m_ptx_kernel_param_info.find(argn);
    if( i != m_ptx_kernel_param_info.end() ) {
       if (i->second.is_ptr_shared()) {
-         assert(args->m_start == NULL && "OpenCL parameter pointer to local memory must have NULL as value"); 
-         scratchpad_memory_param = true; 
+         assert(args->m_start == NULL && "OpenCL parameter pointer to local memory must have NULL as value");
+         scratchpad_memory_param = true;
       } else {
          param_t tmp;
          tmp.pdata = args->m_start;
@@ -1010,45 +1010,45 @@ void function_info::add_param_data( unsigned argn, struct gpgpu_ptx_sim_arg *arg
          i->second.add_offset((unsigned) args->m_offset);
       }
    } else {
-      scratchpad_memory_param = true; 
+      scratchpad_memory_param = true;
    }
 
    if (scratchpad_memory_param) {
       // This should only happen for OpenCL:
-      // 
+      //
       // The LLVM PTX compiler in NVIDIA's driver (version 190.29)
-      // does not generate an argument in the function declaration 
+      // does not generate an argument in the function declaration
       // for __constant arguments.
       //
-      // The associated constant memory space can be allocated in two 
+      // The associated constant memory space can be allocated in two
       // ways. It can be explicitly initialized in the .ptx file where
       // it is declared.  Or, it can be allocated using the clCreateBuffer
-      // on the host. In this later case, the .ptx file will contain 
+      // on the host. In this later case, the .ptx file will contain
       // a global declaration of the parameter, but it will have an unknown
       // array size.  Thus, the symbol's address will not be set and we need
       // to set it here before executing the PTX.
-      
+
       char buffer[2048];
       snprintf(buffer,2048,"%s_param_%u",m_name.c_str(),argn);
-      
+
       symbol *p = m_symtab->lookup(buffer);
       if( p == NULL ) {
          printf("GPGPU-Sim PTX: ERROR ** could not locate symbol for \'%s\' : cannot bind buffer\n", buffer);
          abort();
       }
-      if( data ) 
+      if( data )
          p->set_address((addr_t)*(size_t*)data);
       else {
          // clSetKernelArg was passed NULL pointer for data...
          // this is used for dynamically sized shared memory on NVIDIA platforms
-         bool is_ptr_shared = false; 
+         bool is_ptr_shared = false;
          if( i != m_ptx_kernel_param_info.end() ) {
-            is_ptr_shared = i->second.is_ptr_shared(); 
+            is_ptr_shared = i->second.is_ptr_shared();
          }
 
          if( !is_ptr_shared and !p->is_shared() ) {
             printf("GPGPU-Sim PTX: ERROR ** clSetKernelArg passed NULL but arg not shared memory\n");
-            abort();     
+            abort();
          }
          unsigned num_bits = 8*args->m_nbytes;
          printf("GPGPU-Sim PTX: deferred allocation of shared region for \"%s\" from 0x%x to 0x%x (shared memory space)\n",
@@ -1062,15 +1062,15 @@ void function_info::add_param_data( unsigned argn, struct gpgpu_ptx_sim_arg *arg
          p->set_address( addr+addr_pad );
          m_symtab->alloc_shared( num_bits/8 + addr_pad );
       }
-   } 
+   }
 }
 
-void function_info::finalize( memory_space *param_mem ) 
+void function_info::finalize( memory_space *param_mem )
 {
    unsigned param_address = 0;
    for( std::map<unsigned,param_info>::iterator i=m_ptx_kernel_param_info.begin(); i!=m_ptx_kernel_param_info.end(); i++ ) {
       param_info &p = i->second;
-      if (p.is_ptr_shared()) continue; // Pointer to local memory: Should we pass the allocated shared memory address to the param memory space? 
+      if (p.is_ptr_shared()) continue; // Pointer to local memory: Should we pass the allocated shared memory address to the param memory space?
       std::string name = p.get_name();
       int type = p.get_type();
       param_t param_value = p.get_value();
@@ -1085,28 +1085,28 @@ void function_info::finalize( memory_space *param_mem )
          printf("GPGPU-Sim PTX: WARNING actual kernel paramter size = %zu bytes vs. formal size = %zu (using smaller of two)\n",
                 size, p.get_size()/8);
          size = (size<(p.get_size()/8))?size:(p.get_size()/8);
-      } 
+      }
       // copy the parameter over word-by-word so that parameter that crosses a memory page can be copied over
-      const size_t word_size = 4; 
+      const size_t word_size = 4;
       for (size_t idx = 0; idx < size; idx += word_size) {
          const char *pdata = reinterpret_cast<const char*>(param_value.pdata) + idx; // cast to char * for ptr arithmetic
-         param_mem->write(param_address + idx, word_size, pdata,NULL,NULL); 
+         param_mem->write(param_address + idx, word_size, pdata,NULL,NULL);
       }
       param->set_address(param_address);
-      param_address += size; 
+      param_address += size;
    }
 }
 
-void function_info::param_to_shared( memory_space *shared_mem, symbol_table *symtab ) 
+void function_info::param_to_shared( memory_space *shared_mem, symbol_table *symtab )
 {
-   // TODO: call this only for PTXPlus with GT200 models 
-   extern gpgpu_sim* g_the_gpu; 
-   if (not g_the_gpu->get_config().convert_to_ptxplus()) return; 
+   // TODO: call this only for PTXPlus with GT200 models
+   extern gpgpu_sim* g_the_gpu;
+   if (not g_the_gpu->get_config().convert_to_ptxplus()) return;
 
    // copies parameters into simulated shared memory
    for( std::map<unsigned,param_info>::iterator i=m_ptx_kernel_param_info.begin(); i!=m_ptx_kernel_param_info.end(); i++ ) {
       param_info &p = i->second;
-      if (p.is_ptr_shared()) continue; // Pointer to local memory: Should we pass the allocated shared memory address to the param memory space? 
+      if (p.is_ptr_shared()) continue; // Pointer to local memory: Should we pass the allocated shared memory address to the param memory space?
       std::string name = p.get_name();
       int type = p.get_type();
       param_t value = p.get_value();
@@ -1138,7 +1138,7 @@ void function_info::list_param( FILE *fout ) const
    fflush(fout);
 }
 
-template<int activate_level> 
+template<int activate_level>
 bool ptx_debug_exec_dump_cond(int thd_uid, addr_t pc)
 {
    if (g_debug_execution >= activate_level) {
@@ -1151,26 +1151,26 @@ bool ptx_debug_exec_dump_cond(int thd_uid, addr_t pc)
       }
 
       return true;
-   } 
-   
+   }
+
    return false;
 }
 
-void init_inst_classification_stat() 
+void init_inst_classification_stat()
 {
    static std::set<unsigned> init;
-   if( init.find(g_ptx_kernel_count) != init.end() ) 
+   if( init.find(g_ptx_kernel_count) != init.end() )
       return;
    init.insert(g_ptx_kernel_count);
 
    #define MAX_CLASS_KER 1024
    char kernelname[MAX_CLASS_KER] ="";
    if (!g_inst_classification_stat) g_inst_classification_stat = (void**)calloc(MAX_CLASS_KER, sizeof(void*));
-   snprintf(kernelname, MAX_CLASS_KER, "Kernel %d Classification\n",g_ptx_kernel_count  );         
-   assert( g_ptx_kernel_count < MAX_CLASS_KER ) ; // a static limit on number of kernels increase it if it fails! 
+   snprintf(kernelname, MAX_CLASS_KER, "Kernel %d Classification\n",g_ptx_kernel_count  );
+   assert( g_ptx_kernel_count < MAX_CLASS_KER ) ; // a static limit on number of kernels increase it if it fails!
    g_inst_classification_stat[g_ptx_kernel_count] = StatCreate(kernelname,1,20);
    if (!g_inst_op_classification_stat) g_inst_op_classification_stat = (void**)calloc(MAX_CLASS_KER, sizeof(void*));
-   snprintf(kernelname, MAX_CLASS_KER, "Kernel %d OP Classification\n",g_ptx_kernel_count  );         
+   snprintf(kernelname, MAX_CLASS_KER, "Kernel %d OP Classification\n",g_ptx_kernel_count  );
    g_inst_op_classification_stat[g_ptx_kernel_count] = StatCreate(kernelname,1,100);
 }
 
@@ -1184,19 +1184,19 @@ static unsigned get_tex_datasize( const ptx_instruction *pI, ptx_thread_info *th
    const struct textureInfo* texInfo = gpu->get_texinfo(texref);
 
    unsigned data_size = texInfo->texel_size;
-   return data_size; 
+   return data_size;
 }
 
 void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
 {
-    
+
    bool skip = false;
    int op_classification = 0;
    addr_t pc = next_instr();
    assert( pc == inst.pc ); // make sure timing model and functional model are in sync
    const ptx_instruction *pI = m_func_info->get_instruction(pc);
    set_npc( pc + pI->inst_size() );
-   
+
 
    try {
 
@@ -1208,16 +1208,16 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
       printf("attempted to execute instruction on a thread that is already done.\n");
       assert(0);
    }
-   
+
    if ( g_debug_execution >= 6 || m_gpu->get_config().get_ptx_inst_debug_to_file()) {
       if ( (g_debug_thread_uid==0) || (get_uid() == (unsigned)g_debug_thread_uid) ) {
-        
+
           clear_modifiedregs();
          enable_debug_trace();
       }
    }
-   
-   
+
+
    if( pI->has_pred() ) {
       const operand_info &pred = pI->get_pred();
       ptx_reg_t pred_value = get_operand_value(pred, pred, PRED_TYPE, this, 0);
@@ -1227,7 +1227,7 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
             skip = !pred_lookup(pI->get_pred_mod(), pred_value.pred & 0x000F);
       }
    }
-   
+
    if( skip ) {
       inst.set_not_active(lane_id);
    } else {
@@ -1246,18 +1246,18 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
       }
       delete pJ;
       pI = pI_saved;
-      
+
       // Run exit instruction if exit option included
       if(pI->is_exit())
          exit_impl(pI,this);
    }
-   
+
 
 
    const gpgpu_functional_sim_config &config = m_gpu->get_config();
-   
+
    // Output instruction information to file and stdout
-   if( config.get_ptx_inst_debug_to_file() != 0 && 
+   if( config.get_ptx_inst_debug_to_file() != 0 &&
         (config.get_ptx_inst_debug_thread_uid() == 0 || config.get_ptx_inst_debug_thread_uid() == get_uid()) ) {
       fprintf(m_gpu->get_ptx_inst_debug_file(),
              "[thd=%u] : (%s:%u - %s)\n",
@@ -1270,8 +1270,8 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
    if ( ptx_debug_exec_dump_cond<5>(get_uid(), pc) ) {
       dim3 ctaid = get_ctaid();
       dim3 tid = get_tid();
-      printf("%u [thd=%u][i=%u] : ctaid=(%u,%u,%u) tid=(%u,%u,%u) icount=%u [pc=%u] (%s:%u - %s)  [0x%llx]\n", 
-             g_ptx_sim_num_insn, 
+      printf("%u [thd=%u][i=%u] : ctaid=(%u,%u,%u) tid=(%u,%u,%u) icount=%u [pc=%u] (%s:%u - %s)  [0x%llx]\n",
+             g_ptx_sim_num_insn,
              get_uid(),
              pI->uid(), ctaid.x,ctaid.y,ctaid.z,tid.x,tid.y,tid.z,
              get_icount(),
@@ -1279,7 +1279,7 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
              m_last_set_operand_value.u64 );
       fflush(stdout);
    }
-   
+
    addr_t insn_memaddr = 0xFEEBDAED;
    memory_space_t insn_space = undefined_space;
    _memory_op_t insn_memory_op = no_memory_op;
@@ -1307,11 +1307,11 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
    if (pI->get_opcode() == TEX_OP) {
       inst.set_addr(lane_id, last_eaddr() );
       assert( inst.space == last_space() );
-      insn_data_size = get_tex_datasize(pI, this); // texture obtain its data granularity from the texture info 
+      insn_data_size = get_tex_datasize(pI, this); // texture obtain its data granularity from the texture info
    }
 
    // Output register information to file and stdout
-   if( config.get_ptx_inst_debug_to_file()!=0 && 
+   if( config.get_ptx_inst_debug_to_file()!=0 &&
        (config.get_ptx_inst_debug_thread_uid()==0||config.get_ptx_inst_debug_thread_uid()==get_uid()) ) {
       dump_modifiedregs(m_gpu->get_ptx_inst_debug_file());
       dump_regs(m_gpu->get_ptx_inst_debug_file());
@@ -1327,25 +1327,25 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
    }
    update_pc();
    g_ptx_sim_num_insn++;
-   
+
    //not using it with functional simulation mode
    if(!(this->m_functionalSimulationMode))
        ptx_file_line_stats_add_exec_count(pI);
-   
+
    if ( gpgpu_ptx_instruction_classification ) {
       init_inst_classification_stat();
       unsigned space_type=0;
       switch ( pI->get_space().get_type() ) {
       case global_space: space_type = 10; break;
-      case local_space:  space_type = 11; break; 
-      case tex_space:    space_type = 12; break; 
-      case surf_space:   space_type = 13; break; 
+      case local_space:  space_type = 11; break;
+      case tex_space:    space_type = 12; break;
+      case surf_space:   space_type = 13; break;
       case param_space_kernel:
       case param_space_local:
-                         space_type = 14; break; 
-      case shared_space: space_type = 15; break; 
+                         space_type = 14; break;
+      case shared_space: space_type = 15; break;
       case const_space:  space_type = 16; break;
-      default: 
+      default:
          space_type = 0 ;
          break;
       }
@@ -1356,25 +1356,25 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
    if ( (g_ptx_sim_num_insn % 100000) == 0 ) {
       dim3 ctaid = get_ctaid();
       dim3 tid = get_tid();
-      printf("GPGPU-Sim PTX: %u instructions simulated : ctaid=(%u,%u,%u) tid=(%u,%u,%u)\n",
-             g_ptx_sim_num_insn, ctaid.x,ctaid.y,ctaid.z,tid.x,tid.y,tid.z );
+      //printf("GPGPU-Sim PTX: %u instructions simulated : ctaid=(%u,%u,%u) tid=(%u,%u,%u)\n",
+             //g_ptx_sim_num_insn, ctaid.x,ctaid.y,ctaid.z,tid.x,tid.y,tid.z );
       fflush(stdout);
    }
-   
+
    // "Return values"
    if(!skip) {
       inst.space = insn_space;
       inst.set_addr(lane_id, insn_memaddr);
       inst.data_size = insn_data_size; // simpleAtomicIntrinsics
       assert( inst.memory_op == insn_memory_op );
-   } 
+   }
 
    } catch ( int x  ) {
       printf("GPGPU-Sim PTX: ERROR (%d) executing intruction (%s:%u)\n", x, pI->source_file(), pI->source_line() );
       printf("GPGPU-Sim PTX:       '%s'\n", pI->get_source() );
       abort();
    }
-      
+
 }
 
 void set_param_gpgpu_num_shaders(int num_shaders)
@@ -1382,7 +1382,7 @@ void set_param_gpgpu_num_shaders(int num_shaders)
    gpgpu_param_num_shaders = num_shaders;
 }
 
-const struct gpgpu_ptx_sim_kernel_info* ptx_sim_kernel_info(const function_info *kernel) 
+const struct gpgpu_ptx_sim_kernel_info* ptx_sim_kernel_info(const function_info *kernel)
 {
    return kernel->get_kernel_info();
 }
@@ -1397,9 +1397,9 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
                               int sid,
                               unsigned tid,
                               unsigned threads_left,
-                              unsigned num_threads, 
-                              core_t *core, 
-                              unsigned hw_cta_id, 
+                              unsigned num_threads,
+                              core_t *core,
+                              unsigned hw_cta_id,
                               unsigned hw_warp_id,
                               gpgpu_t *gpu,
                               bool isInFunctionalSimulationMode)
@@ -1427,7 +1427,7 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
 
    if ( !active_threads.empty() ) {
       assert( active_threads.size() <= threads_left );
-      ptx_thread_info *thd = active_threads.front(); 
+      ptx_thread_info *thd = active_threads.front();
       active_threads.pop_front();
       *thread_info = thd;
       thd->init(gpu, core, sid, hw_cta_id, hw_warp_id, tid, isInFunctionalSimulationMode );
@@ -1452,14 +1452,14 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
    memory_space *shared_mem = NULL;
 
    unsigned cta_size = kernel.threads_per_cta();
-   unsigned max_cta_per_sm = num_threads/cta_size; // e.g., 256 / 48 = 5 
+   unsigned max_cta_per_sm = num_threads/cta_size; // e.g., 256 / 48 = 5
    assert( max_cta_per_sm > 0 );
 
    unsigned sm_idx = (tid/cta_size)*gpgpu_param_num_shaders + sid;
 
    if ( shared_memory_lookup.find(sm_idx) == shared_memory_lookup.end() ) {
       if ( g_debug_execution >= 1 ) {
-         printf("  <CTA alloc> : sm_idx=%u sid=%u max_cta_per_sm=%u\n", 
+         printf("  <CTA alloc> : sm_idx=%u sid=%u max_cta_per_sm=%u\n",
                 sm_idx, sid, max_cta_per_sm );
       }
       char buf[512];
@@ -1470,7 +1470,7 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
       ptx_cta_lookup[sm_idx] = cta_info;
    } else {
       if ( g_debug_execution >= 1 ) {
-         printf("  <CTA realloc> : sm_idx=%u sid=%u max_cta_per_sm=%u\n", 
+         printf("  <CTA realloc> : sm_idx=%u sid=%u max_cta_per_sm=%u\n",
                 sm_idx, sid, max_cta_per_sm );
       }
       shared_mem = shared_memory_lookup[sm_idx];
@@ -1486,7 +1486,7 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
       kernel.increment_thread_id();
       new_tid += tid;
       ptx_thread_info *thd = new ptx_thread_info(kernel);
-   
+
       memory_space *local_mem = NULL;
       std::map<unsigned,memory_space*>::iterator l = local_mem_lookup.find(new_tid);
       if ( l != local_mem_lookup.end() ) {
@@ -1502,7 +1502,7 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
       thd->set_ntid(kernel.get_cta_dim());
       thd->set_ctaid(ctaid3d);
       thd->set_tid(tid3d);
-      if( kernel.entry()->get_ptx_version().extensions() ) 
+      if( kernel.entry()->get_ptx_version().extensions() )
          thd->cpy_tid_to_reg(tid3d);
       thd->set_valid();
       thd->m_shared_mem = shared_mem;
@@ -1540,7 +1540,7 @@ size_t get_kernel_code_size( class function_info *entry )
 
 
 kernel_info_t *gpgpu_opencl_ptx_sim_init_grid(class function_info *entry,
-                                             gpgpu_ptx_sim_arg_list_t args, 
+                                             gpgpu_ptx_sim_arg_list_t args,
                                              struct dim3 gridDim,
                                              struct dim3 blockDim,
                                              gpgpu_t *gpu )
@@ -1553,7 +1553,7 @@ kernel_info_t *gpgpu_opencl_ptx_sim_init_grid(class function_info *entry,
       argn++;
    }
    entry->finalize(result->get_param_memory());
-   g_ptx_kernel_count++; 
+   g_ptx_kernel_count++;
    fflush(stdout);
 
    return result;
@@ -1605,7 +1605,7 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
    std::map<const void*,std::string>::iterator g=g_global_name_lookup.find(hostVar);
    if ( g!=g_global_name_lookup.end() ) {
       if ( found_sym ) {
-         printf("Execution error: PTX symbol \"%s\" w/ hostVar=0x%Lx is declared both const and global?\n", 
+         printf("Execution error: PTX symbol \"%s\" w/ hostVar=0x%Lx is declared both const and global?\n",
                 sym_name.c_str(), (unsigned long long)hostVar );
          abort();
       }
@@ -1627,7 +1627,7 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
    if ( !found_sym ) {
       printf("Execution error: No information for PTX symbol w/ hostVar=0x%Lx\n", (unsigned long long)hostVar );
       abort();
-   } else printf("GPGPU-Sim PTX: gpgpu_ptx_sim_memcpy_symbol: Found PTX symbol w/ hostVar=0x%Lx\n", (unsigned long long)hostVar ); 
+   } else printf("GPGPU-Sim PTX: gpgpu_ptx_sim_memcpy_symbol: Found PTX symbol w/ hostVar=0x%Lx\n", (unsigned long long)hostVar );
    const char *mem_name = NULL;
    memory_space *mem = NULL;
 
@@ -1637,7 +1637,7 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
 
    symbol *sym = symtab->lookup(sym_name.c_str());
    assert(sym);
-   unsigned dst = sym->get_address() + offset; 
+   unsigned dst = sym->get_address() + offset;
    switch (mem_region.get_type()) {
    case const_space:
       mem = gpu->get_global_memory();
@@ -1650,11 +1650,11 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
    default:
       abort();
    }
-   printf("GPGPU-Sim PTX: gpgpu_ptx_sim_memcpy_symbol: copying %s memory %zu bytes %s symbol %s+%zu @0x%x ...\n", 
+   printf("GPGPU-Sim PTX: gpgpu_ptx_sim_memcpy_symbol: copying %s memory %zu bytes %s symbol %s+%zu @0x%x ...\n",
           mem_name, count, (to?" to ":"from"), sym_name.c_str(), offset, dst );
    for ( unsigned n=0; n < count; n++ ) {
-      if( to ) mem->write(dst+n,1,((char*)src)+n,NULL,NULL); 
-      else mem->read(dst+n,1,((char*)src)+n); 
+      if( to ) mem->write(dst+n,1,((char*)src)+n,NULL,NULL);
+      else mem->read(dst+n,1,((char*)src)+n);
    }
    fflush(stdout);
 }
@@ -1665,7 +1665,7 @@ extern int ptx_debug;
 
 bool g_cuda_launch_blocking = false;
 
-void read_sim_environment_variables() 
+void read_sim_environment_variables()
 {
    ptx_debug = 0;
    g_debug_execution = 0;
@@ -1728,7 +1728,7 @@ ptx_cta_info *g_func_cta_info = NULL;
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 /*!
-This function simulates the CUDA code functionally, it takes a kernel_info_t parameter 
+This function simulates the CUDA code functionally, it takes a kernel_info_t parameter
 which holds the data for the CUDA kernel to be executed
 !*/
 void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
@@ -1747,10 +1747,10 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
         );
         cta.execute();
     }
-    
-   //registering this kernel as done      
+
+   //registering this kernel as done
    extern stream_manager *g_stream_manager;
-   
+
    //openCL kernel simulation calls don't register the kernel so we don't register its exit
    if(!openCL)
    g_stream_manager->register_finished_kernel(kernel.get_uid());
@@ -1768,7 +1768,7 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
    time_t end_time, elapsed_time, days, hrs, minutes, sec;
    end_time = time((time_t *)NULL);
    elapsed_time = MAX(end_time - g_simulation_starttime, 1);
-	
+
 
    //calculating and printing simulation time in terms of days, hours, minutes and seconds
    days    = elapsed_time/(3600*24);
@@ -1780,27 +1780,27 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
    printf("\n\ngpgpu_simulation_time = %u days, %u hrs, %u min, %u sec (%u sec)\n",
           (unsigned)days, (unsigned)hrs, (unsigned)minutes, (unsigned)sec, (unsigned)elapsed_time );
    printf("gpgpu_simulation_rate = %u (inst/sec)\n", (unsigned)(g_ptx_sim_num_insn / elapsed_time) );
-   fflush(stdout); 
+   fflush(stdout);
 }
 
 void functionalCoreSim::initializeCTA()
 {
     int ctaLiveThreads=0;
-    
+
     for(int i=0; i< m_warp_count; i++){
         m_warpAtBarrier[i]=false;
         m_liveThreadCount[i]=0;
     }
     for(int i=0; i< m_warp_count*m_warp_size;i++)
         m_thread[i]=NULL;
-    
+
     //get threads for a cta
     for(unsigned i=0; i<m_kernel->threads_per_cta();i++) {
         ptx_sim_init_thread(*m_kernel,&m_thread[i],0,i,m_kernel->threads_per_cta()-i,m_kernel->threads_per_cta(),this,0,i/m_warp_size,(gpgpu_t*)m_gpu, true);
         assert(m_thread[i]!=NULL && !m_thread[i]->is_done());
         ctaLiveThreads++;
     }
-    
+
     for(int k=0;k<m_warp_count;k++)
         createWarp(k);
 }
@@ -1813,8 +1813,8 @@ void  functionalCoreSim::createWarp(unsigned warpId)
     for(int i=warpId*m_warp_size; i<warpId*m_warp_size+m_warp_size;i++){
         if(m_thread[i]==NULL) initialMask.reset(i-warpId*m_warp_size);
         else liveThreadsCount++;
-    }   
-   
+    }
+
    assert(m_thread[warpId*m_warp_size]!=NULL);
    m_simt_stack[warpId]->launch(m_thread[warpId*m_warp_size]->get_pc(),initialMask);
    m_liveThreadCount[warpId]= liveThreadsCount;
@@ -1823,7 +1823,7 @@ void  functionalCoreSim::createWarp(unsigned warpId)
 void functionalCoreSim::execute()
  {
     initializeCTA();
-    
+
     //start executing the CTA
     while(true){
         bool someOneLive= false;
@@ -1869,14 +1869,14 @@ int g_ptxinfo_error_detected;
 static char *g_ptxinfo_kname = NULL;
 static struct gpgpu_ptx_sim_kernel_info g_ptxinfo_kinfo;
 
-const char *get_ptxinfo_kname() 
-{ 
-    return g_ptxinfo_kname; 
+const char *get_ptxinfo_kname()
+{
+    return g_ptxinfo_kname;
 }
 
 void print_ptxinfo()
 {
-    printf ("GPGPU-Sim PTX: Kernel \'%s\' : regs=%u, lmem=%u, smem=%u, cmem=%u\n", 
+    printf ("GPGPU-Sim PTX: Kernel \'%s\' : regs=%u, lmem=%u, smem=%u, cmem=%u\n",
             get_ptxinfo_kname(),
             g_ptxinfo_kinfo.regs,
             g_ptxinfo_kinfo.lmem,
@@ -1941,7 +1941,7 @@ void ptxinfo_opencl_addinfo( std::map<std::string,function_info*> &kernels )
       printf ("GPGPU-Sim PTX: ERROR ** implementation for '%s' not found.\n", g_ptxinfo_kname );
       abort();
    } else {
-      printf ("GPGPU-Sim PTX: Kernel \'%s\' : regs=%u, lmem=%u, smem=%u, cmem=%u\n", 
+      printf ("GPGPU-Sim PTX: Kernel \'%s\' : regs=%u, lmem=%u, smem=%u, cmem=%u\n",
               g_ptxinfo_kname,
               g_ptxinfo_kinfo.regs,
               g_ptxinfo_kinfo.lmem,
@@ -1965,10 +1965,10 @@ struct rec_pts find_reconvergence_points( function_info *finfo )
 {
    rec_pts tmp;
    std::map<function_info*,rec_pts>::iterator r=g_rpts.find(finfo);
- 
+
    if( r==g_rpts.end() ) {
       int num_recon = finfo->get_num_reconvergence_pairs();
-      
+
       gpgpu_recon_t *kernel_recon_points = (struct gpgpu_recon_t*) calloc(num_recon, sizeof(struct gpgpu_recon_t));
       finfo->get_reconvergence_pairs(kernel_recon_points);
       printf("GPGPU-Sim PTX: reconvergence points for %s...\n", finfo->get_name().c_str() );
@@ -1976,7 +1976,7 @@ struct rec_pts find_reconvergence_points( function_info *finfo )
          printf("GPGPU-Sim PTX: %2u (potential) branch divergence @ ", i+1 );
          kernel_recon_points[i].source_inst->print_insn();
          printf("\n");
-         printf("GPGPU-Sim PTX:    immediate post dominator      @ " ); 
+         printf("GPGPU-Sim PTX:    immediate post dominator      @ " );
          if( kernel_recon_points[i].target_inst )
             kernel_recon_points[i].target_inst->print_insn();
          printf("\n");
@@ -2000,11 +2000,11 @@ address_type get_return_pc( void *thd )
     return the_thread->get_return_PC();
 }
 
-address_type get_converge_point( address_type pc ) 
+address_type get_converge_point( address_type pc )
 {
-   // the branch could encode the reconvergence point and/or a bit that indicates the 
-   // reconvergence point is the return PC on the call stack in the case the branch has 
-   // no immediate postdominator in the function (i.e., due to multiple return points). 
+   // the branch could encode the reconvergence point and/or a bit that indicates the
+   // reconvergence point is the return PC on the call stack in the case the branch has
+   // no immediate postdominator in the function (i.e., due to multiple return points).
 
    std::map<unsigned,function_info*>::iterator f=g_pc_to_finfo.find(pc);
    assert( f != g_pc_to_finfo.end() );

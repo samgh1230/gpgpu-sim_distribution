@@ -1110,7 +1110,7 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
     m_n_active_cta++;
 
     shader_CTA_count_log(m_sid, 1);
-    printf("GPGPU-Sim uArch: core:%3d, cta:%2u initialized @(%lld,%lld)\n", m_sid, free_cta_hw_id, gpu_sim_cycle, gpu_tot_sim_cycle );
+    //printf("GPGPU-Sim uArch: core:%3d, cta:%2u initialized @(%lld,%lld)\n", m_sid, free_cta_hw_id, gpu_sim_cycle, gpu_tot_sim_cycle );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -1306,12 +1306,12 @@ void gpgpu_sim::cycle()
             hrs     = elapsed_time/3600 - 24*days;
             minutes = elapsed_time/60 - 60*(hrs + 24*days);
             sec = elapsed_time - 60*(minutes + 60*(hrs + 24*days));
-            printf("GPGPU-Sim uArch: cycles simulated: %lld  inst.: %lld (ipc=%4.1f) sim_rate=%u (inst/sec) elapsed = %u:%u:%02u:%02u / %s",
-                   gpu_tot_sim_cycle + gpu_sim_cycle, gpu_tot_sim_insn + gpu_sim_insn,
-                   (double)gpu_sim_insn/(double)gpu_sim_cycle,
-                   (unsigned)((gpu_tot_sim_insn+gpu_sim_insn) / elapsed_time),
-                   (unsigned)days,(unsigned)hrs,(unsigned)minutes,(unsigned)sec,
-                   ctime(&curr_time));
+            //printf("GPGPU-Sim uArch: cycles simulated: %lld  inst.: %lld (ipc=%4.1f) sim_rate=%u (inst/sec) elapsed = %u:%u:%02u:%02u / %s",
+                   //gpu_tot_sim_cycle + gpu_sim_cycle, gpu_tot_sim_insn + gpu_sim_insn,
+                   //(double)gpu_sim_insn/(double)gpu_sim_cycle,
+                   //(unsigned)((gpu_tot_sim_insn+gpu_sim_insn) / elapsed_time),
+                   //(unsigned)days,(unsigned)hrs,(unsigned)minutes,(unsigned)sec,
+                   //ctime(&curr_time));
             fflush(stdout);
             last_liveness_message_time = elapsed_time;
          }
