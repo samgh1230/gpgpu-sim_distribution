@@ -445,8 +445,10 @@ void shader_core_stats::print( FILE* fout ) const
    fprintf(fout, "Stall:%d\t", shader_cycle_distro[2]);
    fprintf(fout, "W0_Idle:%d\t", shader_cycle_distro[0]);
    fprintf(fout, "W0_Scoreboard:%d", shader_cycle_distro[1]);
-   for (unsigned i = 3; i < m_config->warp_size + 3; i++)
-      fprintf(fout, "\tW%d:%d", i-2, shader_cycle_distro[i]);
+   //print out load dependence, added by gh
+   fprintf(fout, "\tload dependence:%d",shader_cycle_distro[3]);
+   for (unsigned i = 4; i < m_config->warp_size + 4; i++)
+      fprintf(fout, "\tW%d:%d", i-3, shader_cycle_distro[i]);
    fprintf(fout, "\n");
 
    m_outgoing_traffic_stats->print(fout);
@@ -674,7 +676,26 @@ void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
     execute_warp_inst_t(inst);
     if( inst.is_load() || inst.is_store() )
         inst.generate_mem_accesses();// model memory access
+
+        //record number of active threads per access,added by gh
+        if( inst.is_load() && (inst.space.get_type() == local_space || inst.space.get_type() == global_space) ) {
+            unsigned warp_id = inst.warp_id();
+            unsigned pc = inst.pc;
+            unsigned issue_cycle = inst.get_issue_cycle();
+            unsigned uid = inst.get_uid();
+            unsigned n_access = inst.get_num_access();
+            if(n_access){
+                shader_core_stats::lat_and_thread* tmp = new(shader_core_stats::lat_and_thread);
+                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle] = *tmp;
+                delete(tmp);
+                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].n_access = n_access;
+                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].nthreads = inst.get_nthreads_per_access();
+                /*printf("n_access:%u,%u\n",m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].n_access,n_access);*/
+            }
+    }
 }
+
+
 
 void shader_core_ctx::issue_warp( register_set& pipe_reg_set, const warp_inst_t* next_inst, const active_mask_t &active_mask, unsigned warp_id )
 {
@@ -685,7 +706,7 @@ void shader_core_ctx::issue_warp( register_set& pipe_reg_set, const warp_inst_t*
     assert(next_inst->valid());
     **pipe_reg = *next_inst; // static instruction information
     (*pipe_reg)->issue( active_mask, warp_id, gpu_tot_sim_cycle + gpu_sim_cycle, m_warp[warp_id].get_dynamic_warp_id() ); // dynamic instruction information
-    m_stats->shader_cycle_distro[2+(*pipe_reg)->active_count()]++;
+    m_stats->shader_cycle_distro[3+(*pipe_reg)->active_count()]++;
     func_exec_inst( **pipe_reg );
     if( next_inst->op == BARRIER_OP ){
     	m_warp[warp_id].store_info_of_last_inst_at_barrier(*pipe_reg);
@@ -805,6 +826,7 @@ void scheduler_unit::cycle()
     bool valid_inst = false;  // there was one warp with a valid instruction to issue (didn't require flush due to control hazard)
     bool ready_inst = false;  // of the valid instructions, there was one not waiting for pending register writes
     bool issued_inst = false; // of these we issued one
+    bool lddep_inst = true;
 
     order_warps();
     for ( std::vector< shd_warp_t* >::const_iterator iter = m_next_cycle_prioritized_warps.begin();
@@ -840,6 +862,7 @@ void scheduler_unit::cycle()
                 } else {
                     valid_inst = true;
                     if ( !m_scoreboard->checkCollision(warp_id, pI) ) {
+                        lddep_inst = false;
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) passes scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id() );
                         ready_inst = true;
@@ -868,8 +891,13 @@ void scheduler_unit::cycle()
                                     issued_inst=true;
                                     warp_inst_issued = true;
                                 }
-                            }                         }
+                            }
+                        }
                     } else {
+                        if(!m_scoreboard->checkCollisionLD(warp_id, pI))
+                        {
+                            lddep_inst = false;
+                        }
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) fails scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id() );
                     }
@@ -910,8 +938,11 @@ void scheduler_unit::cycle()
     // issue stall statistics:
     if( !valid_inst )
         m_stats->shader_cycle_distro[0]++; // idle or control hazard
-    else if( !ready_inst )
+    else if( !ready_inst ){
         m_stats->shader_cycle_distro[1]++; // waiting for RAW hazards (possibly due to memory)
+        if(lddep_inst)
+            m_stats->shader_cycle_distro[3]++; // load dependence stall
+    }
     else if( !issued_inst )
         m_stats->shader_cycle_distro[2]++; // pipeline stalled
 }
@@ -1224,19 +1255,6 @@ void shader_core_ctx::warp_inst_complete( warp_inst_t &inst)
   m_gpu->gpu_sim_insn += inst.active_count();
   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
 
-  //set first latency, added by gh
-  /*if (inst.is_load() || inst.is_store()){*/
-    /*if (!inst.is_first_latency_set()) {*/
-        /*inst.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());*/
-        /*inst.set_first_flag();*/
-    /*}*/
-    /*else {*/
-        /*unsigned long long latency = gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle();*/
-        /*if (latency < inst.get_first_latency())*/
-            /*inst.set_first_latency(latency);*/
-    /*}*/
-  /*}*/
-
   //if memory op, set last latency, added by gh
    if(inst.is_load()||inst.is_store())
        inst.set_last_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());
@@ -1254,6 +1272,7 @@ void shader_core_ctx::warp_inst_complete( warp_inst_t &inst)
       max = m_stats->m_max_last_latency;
       m_stats->m_max_last_latency = (max<inst.get_last_latency())?inst.get_last_latency():max;
   }
+
 }
 
 void shader_core_ctx::writeback()
@@ -1345,7 +1364,15 @@ ldst_unit::process_cache_access( cache_t* cache,
             if (latency < inst.get_first_latency())
                 inst.set_first_latency(latency);
         }
-
+        //add latency, added by gh
+        if (inst.is_load() && (inst.space.get_type()==local_space || inst.space.get_type()==global_space)){
+            unsigned warp_id = inst.warp_id();
+            address_type pc = inst.pc;
+            unsigned uid = inst.get_uid();
+            unsigned long long issue_cycle = inst.get_issue_cycle();
+            /*printf("add latency at ldst_unit::process cache access.warp_id:%u, pc:%u, issue_cycle:%llu\n",warp_id,pc,issue_cycle);*/
+            m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].lat.push_back(gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle());
+        }
 
         if ( inst.is_load() ) {
             for ( unsigned r=0; r < 4; r++)
@@ -1363,7 +1390,7 @@ ldst_unit::process_cache_access( cache_t* cache,
         assert( status == MISS || status == HIT_RESERVED );
         //inst.clear_active( access.get_warp_mask() ); // threads in mf writeback when mf returns
         //
-
+        /*printf("cache miss. warp id:%u, pc:%u, address:%u, cycle:%llu, num_of_accesses:%u\n",inst.warp_id(),inst.pc,address,gpu_sim_cycle+gpu_tot_sim_cycle,inst.get_num_access());*/
         inst.accessq_pop_back();
 
     }
@@ -1451,18 +1478,7 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
            mem_fetch *mf = m_mf_allocator->alloc(inst,access);
            m_icnt->push(mf);
            inst.accessq_pop_back();
-            // set first latency, if not, added by gh
-            // //set first latency, if not, added by gh
-           /*if (!inst.is_first_latency_set()) {*/
-              /*inst.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());*/
-              /*inst.set_first_flag();*/
-            /*}*/
-            /*else {*/
-                /*unsigned long long latency = gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle();*/
-                /*if (latency < inst.get_first_latency())*/
-                    /*inst.set_first_latency(latency);*/
-            /*}*/
-            //inst.clear_active( access.get_warp_mask() );
+           //inst.clear_active( access.get_warp_mask() );
            if( inst.is_load() ) {
               for( unsigned r=0; r < 4; r++)
                   if(inst.out[r] > 0)
@@ -1763,10 +1779,19 @@ void ldst_unit::writeback()
                 if (latency < m_next_wb.get_first_latency())
                     m_next_wb.set_first_latency(latency);
             }
+            //add latency, added by gh
+            if (m_next_wb.is_load() && (m_next_wb.space.get_type()==local_space || m_next_wb.space.get_type()==global_space)){
+                unsigned warp_id = m_next_wb.warp_id();
+                unsigned dynamic_warp_id = m_next_wb.dynamic_warp_id();
+                unsigned uid = m_next_wb.get_uid();
+                address_type pc = m_next_wb.pc;
+                unsigned long long issue_cycle = m_next_wb.get_issue_cycle();
+                /*printf("add latency at ldst_unit::writeback.uid:%u, warp_id:%u, pc:%u, issue_cycle:%llu, addr:%u, lat:%u.\n",m_next_wb.get_uid(),warp_id,pc,issue_cycle,m_next_wb.get_num_access(),m_next_wb.get_addr(0),gpu_sim_cycle+gpu_tot_sim_cycle-m_next_wb.get_issue_cycle());*/
+                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].lat.push_back(gpu_sim_cycle + gpu_tot_sim_cycle - m_next_wb.get_issue_cycle());
+            }
             if( insn_completed ) {
                 m_core->warp_inst_complete(m_next_wb);
             }
-
             m_next_wb.clear();
             m_last_inst_gpu_sim_cycle = gpu_sim_cycle;
             m_last_inst_gpu_tot_sim_cycle = gpu_tot_sim_cycle;
@@ -1808,6 +1833,7 @@ void ldst_unit::writeback()
         case 3: // global/local
             if( m_next_global ) {
                 m_next_wb = m_next_global->get_inst();
+                /*printf("get next wb inst at global, warp id:%u,pc:%u\n",m_next_wb.warp_id(),m_next_wb.pc);*/
                 if( m_next_global->isatomic() )
                     m_core->decrement_atomic_count(m_next_global->get_wid(),m_next_global->get_access_warp_mask().count());
                 delete m_next_global;
@@ -1819,6 +1845,7 @@ void ldst_unit::writeback()
             if( m_L1D && m_L1D->access_ready() ) {
                 mem_fetch *mf = m_L1D->next_access();
                 m_next_wb = mf->get_inst();
+                /*printf("get next wb inst at L1D, warp id:%u,pc:%u\n",m_next_wb.warp_id(),m_next_wb.pc);*/
                 delete mf;
                 serviced_client = next_client;
             }
@@ -1826,6 +1853,13 @@ void ldst_unit::writeback()
         default: abort();
         }
     }
+    if (!m_next_wb.empty()){
+    unsigned warp_id = m_next_wb.warp_id();
+    address_type pc = m_next_wb.pc;
+    unsigned long long issue_cycle = m_next_wb.get_issue_cycle();
+    /*printf("next wb inst at ldst_unit::writeback.warp_id:%u, pc:%u, issue_cycle:%llu,lat:%u.\n",warp_id,pc,issue_cycle,gpu_sim_cycle+gpu_tot_sim_cycle-m_next_wb.get_issue_cycle());*/
+    }
+
     // update arbitration priority only if:
     // 1. the writeback buffer was available
     // 2. a client was serviced
@@ -3184,12 +3218,6 @@ void opndcoll_rfu_t::collector_unit_t::init( unsigned n,
    m_warp = new warp_inst_t(config);
    m_bank_warp_shift=log2_warp_size;
 
-   //stats init added by gh
-   m_first_opnd_latency = 0;
-   m_last_opnd_latency = 0;
-   m_allocation_timestamp  = 0;
-   m_allocated = false;
-   m_fetched_first = false;
 }
 
 bool opndcoll_rfu_t::collector_unit_t::allocate( register_set* pipeline_reg_set, register_set* output_reg_set )
@@ -3211,10 +3239,6 @@ bool opndcoll_rfu_t::collector_unit_t::allocate( register_set* pipeline_reg_set,
       }
       //move_warp(m_warp,*pipeline_reg);
       pipeline_reg_set->move_out_to(m_warp);
-      //cu allocated, added by gh
-      //m_allocation_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle ;
-      //m_rfu->shader_core()->get_stats()->m_allocated_cus ++;
-      m_allocated = true;
       return true;
    }
    return false;

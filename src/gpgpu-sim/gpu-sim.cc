@@ -722,6 +722,138 @@ void gpgpu_sim::update_stats() {
     gpu_tot_sim_insn += gpu_sim_insn;
 }
 
+//print out latency histogram, added by gh
+
+void print_histogram(std::vector<unsigned> lats, unsigned bucket_size, FILE* fp)
+{
+    if (lats.size()==0) return;
+    unsigned max = *(std::max_element(lats.begin(),lats.end()));
+    //printf("max:%u\n",max);
+    unsigned num_hist = max/bucket_size+1;
+    std::vector<unsigned> histogram(num_hist);
+    for(std::vector<unsigned>::iterator it=lats.begin();it != lats.end();it++)
+    {
+        unsigned idx = (*it)/bucket_size;
+        histogram[idx] += 1;
+    }
+
+    fprintf(fp,"--------------------histogram-------------------------------\n");
+    for(unsigned i = 0;i < histogram.size();i++)
+    {
+        float perc = (float)histogram[i]/lats.size();
+        perc *= 100;
+        if(perc==0) continue;
+        fprintf(fp,"%u-%u: %f\n", i*bucket_size,(i+1)*bucket_size, perc);
+    }
+}
+
+void print_avg_stat(std::vector<unsigned> stat, FILE* f)
+{
+    std::vector<unsigned>::iterator it = stat.begin();
+    unsigned sum_stat=0;
+    for(;it!=stat.end();it++)
+        sum_stat += *it;
+    fprintf(f,"average stat:%f\n",(float)sum_stat/stat.size());
+}
+void print_signed_avg_stat(std::vector<signed long long> stat, FILE* f)
+{
+    std::vector<signed long long>::iterator it = stat.begin();
+    signed long long sum_stat=0;
+    for(;it!=stat.end();it++)
+        sum_stat += *it;
+    fprintf(f,"average stat:%f\n",(float)sum_stat/stat.size());
+}
+class new_warp{
+public:
+    new_warp(unsigned num_thread,std::vector<unsigned long long> lats, std::vector<unsigned> threads, unsigned long long warp_completed_cycle){
+        this->num_thread = num_thread;
+        lat = lats;
+        threads_dist = threads;
+        this->warp_completed_cycle = warp_completed_cycle;
+        //this->advanced_cycles_per_thread = advanced_cycles_per_thread;
+    }
+    new_warp(const new_warp& org){
+        num_thread = org.num_thread;
+        lat = org.lat;
+        threads_dist = org.threads_dist;
+        warp_completed_cycle = org.warp_completed_cycle;
+        //advanced_cycles_per_thread = org.advanced_cycles_per_thread;
+    }
+    ~new_warp(){
+        lat.clear();
+        threads_dist.clear();
+        //advanced_cycles_per_thread.clear();
+    }
+    unsigned num_thread;
+    std::vector<unsigned long long> lat;
+    std::vector<unsigned> threads_dist;
+    //std::vector<unsigned long long> advanced_cycles_per_thread;
+    unsigned long long warp_completed_cycle;
+};
+//thread permutation, not consider register file bank conflict
+#define THREAD_LANE 32
+#define LAT_GAP 20
+void permutate_thread_non_regfile(std::map<unsigned, std::vector<tuple_lat_thread> > pc_hash_map,std::map<unsigned, std::vector<new_warp> >& pc_warp, FILE* fp)
+{
+    std::map<unsigned, std::vector<tuple_lat_thread> >::iterator iter = pc_hash_map.begin();
+    std::vector<unsigned> stat_thread;
+    std::vector<unsigned long long> stat_last_lat;
+    std::vector<unsigned> stat_wait_time_per_thread;
+
+    for(;iter!=pc_hash_map.end();iter++)
+    {
+        unsigned pc = iter->first;
+        std::vector<tuple_lat_thread>::iterator it = iter->second.begin();
+        unsigned threads_in_warp = 0;
+        std::vector<unsigned long long> lats;
+        std::vector<unsigned> threads;
+        std::vector<unsigned long long> final_cycle;
+        std::vector<unsigned long long> old_warp_completed_cycle;
+        for(;it!=iter->second.end();it++)
+        {
+            unsigned last_lat = (final_cycle.size())?final_cycle.front():it->final_cycle;//use front or back as baseline?
+            unsigned gap = it->final_cycle - last_lat;
+            if((threads_in_warp + it->num_thread < THREAD_LANE)&&(gap < LAT_GAP))
+            {
+                lats.push_back(it->lat);
+                threads.push_back(it->num_thread);
+                final_cycle.push_back(it->final_cycle);
+                old_warp_completed_cycle.push_back(it->warp_completed_cycle);
+                threads_in_warp += it->num_thread;
+            }
+            else{
+                //sort(lats.begin(),lats.end());
+                if (threads_in_warp==0) continue;
+                for(int i=0;i<final_cycle.size()-1;i++){
+                    stat_wait_time_per_thread.push_back(final_cycle.back()-final_cycle[i]);
+                }
+                pc_warp[pc].push_back(new_warp(threads_in_warp,lats,threads,final_cycle.back()));
+                stat_thread.push_back(threads_in_warp);
+                //stat_last_lat.push_back(final_cycle.back()-final_cycle.front());
+                threads_in_warp = 0;
+                lats.clear();
+                threads.clear();
+                final_cycle.clear();
+            }
+        }
+    }
+    fprintf(fp,"-------------------------------------thread_in_warp-----------------------------------------------\n");
+    print_histogram(stat_thread,1,fp);
+    fprintf(fp,"-------------------------------------wait_time_per_thread-----------------------------------------\n");
+    print_histogram(stat_wait_time_per_thread,10,fp);
+    print_avg_stat(stat_wait_time_per_thread,fp);
+    stat_thread.clear();
+    //print_avg_stat(stat_last_lat,stdout);
+    stat_last_lat.clear();
+    stat_wait_time_per_thread.clear();
+}
+
+
+// hash map <pc, tuple_lat_thread>
+std::map<unsigned, std::vector<tuple_lat_thread> > finished_cycle_per_pc;
+std::map<unsigned, std::vector<new_warp> > pc_warp;
+
+
 void gpgpu_sim::print_stats()
 {
     ptx_file_line_stats_write_file();
@@ -733,16 +865,88 @@ void gpgpu_sim::print_stats()
         icnt_display_overall_stats();
         printf("----------------------------END-of-Interconnect-DETAILS-------------------------\n" );
     }
-    //print memory divegence stats, added by gh
-    printf("gpgpu-sim num_warp_memory_access: %llu\n",m_shader_stats->m_num_warp_memory_access );
-    if (m_shader_stats->m_num_warp_memory_access) {
-        printf("gpgpu-sim Average coalesed accesses: %f\n", (float)m_shader_stats->m_average_coalesced_access_per_load/m_shader_stats->m_num_warp_memory_access);
-        printf("gpgpu-sim Percentage of uncoalesed load: %f\n", (float)m_shader_stats->m_num_uncoalesced_load/m_shader_stats->m_num_warp_memory_access*100);
-        printf("gppgu-sim Average first latency: %f\n", (float)m_shader_stats->m_average_first_latency/m_shader_stats->m_num_warp_memory_access);
-        printf("gppgu-sim Average last latency: %f\n", (float)m_shader_stats->m_average_last_latency/m_shader_stats->m_num_warp_memory_access);
+
+    //output to file,added by gh
+    std::vector<unsigned> stat_wait_time_per_thread;
+    std::vector<unsigned> stat_thread_in_warp;
+
+    string file_prefix = "mem-lat-dist_";
+    string file_suffix = ".txt";
+    string indx = to_string(m_executed_kernel_uids[0]);
+    string filename = file_prefix + indx + file_suffix;
+    FILE* f = fopen(filename.c_str(),"w");
+    std::map<unsigned, std::map<unsigned,std::map<unsigned, std::map<unsigned long long, shader_core_stats::lat_and_thread > > > >mem_acc_lat = m_shader_stats->get_acc_lat();
+    std::map<unsigned, std::map<unsigned,std::map<unsigned, std::map<unsigned long long, shader_core_stats::lat_and_thread> > > >::iterator it;
+
+    for(it=mem_acc_lat.begin();it != mem_acc_lat.end();it++)
+    {
+        unsigned warp_id = it->first;
+        std::map<unsigned, std::map<unsigned,std::map<unsigned long long, shader_core_stats::lat_and_thread > > > b = it->second;
+        std::map<unsigned, std::map<unsigned,std::map<unsigned long long, shader_core_stats::lat_and_thread > > >::iterator it_b;
+        for(it_b=b.begin();it_b!=b.end();it_b++)
+        {
+            unsigned uid = it_b->first;
+            std::map<unsigned,std::map<unsigned long long, shader_core_stats::lat_and_thread > > c = it_b->second;
+            std::map<unsigned,std::map<unsigned long long, shader_core_stats::lat_and_thread > >::iterator it_c;
+            for(it_c=c.begin();it_c!=c.end();it_c++)
+            {
+                std::map<unsigned long long, shader_core_stats::lat_and_thread> d = it_c->second;
+                unsigned pc = it_c->first;
+                std::map<unsigned long long, shader_core_stats::lat_and_thread>::iterator it_d;
+
+                std::vector<class tuple_lat_thread>* ptr = &(finished_cycle_per_pc[pc]);
+                for(it_d=d.begin();it_d != d.end(); it_d++)
+                {
+                    unsigned long long issue_cycle = it_d->first;
+                    shader_core_stats::lat_and_thread* m_lat_and_thread = &(it_d->second);
+                    if(m_lat_and_thread->n_access == 1) continue;
+                    /************************detailed info for load latency**********************************/
+                    //fprintf(f,"%u %u %u %llu\t", warp_id,uid,pc,issue_cycle);
+                    //m_lat_and_thread.print_lats(f);
+                    //m_lat_and_thread.print_nthreads(f);
+                    //fprintf(f,"\n");
+                    //printf("%u-%u\n",m_lat_and_thread.lat.front(),m_lat_and_thread.lat.back());
+                    //unsigned diff = m_lat_and_thread.lat.back() - m_lat_and_thread.lat.front();
+                    //lat_dist.push_back(diff);
+                    for(int i=0;i<m_lat_and_thread->n_access;i++)
+                    {
+                        unsigned long long final_cycle = m_lat_and_thread->lat[i] + issue_cycle;//calculate latency of each access,complete time of each access
+                        unsigned num_thread = m_lat_and_thread->nthreads[i];
+                        unsigned long long completed_cycle = m_lat_and_thread->lat.back()+issue_cycle; //time warp completed
+                        unsigned long long wait_time = completed_cycle - final_cycle;
+                        stat_wait_time_per_thread.push_back(wait_time);
+                        ptr->push_back(tuple_lat_thread(final_cycle,m_lat_and_thread->lat[i],num_thread,completed_cycle,wait_time));
+                    }
+                    //lat_dist.push_back(m_lat_and_thread->lat.front());
+                }
+            }
+        }
     }
-    printf("gppgu-sim max first latency: %llu\n", m_shader_stats->m_max_first_latency);
-    printf("gppgu-sim max last latency: %llu\n", m_shader_stats->m_max_last_latency);
+    mem_acc_lat.clear();//release mem_acc_lat
+    fprintf(f,"----------------------------------------------------------old_wait_time_per_thread----------------------------------------------------\n");
+    print_histogram(stat_wait_time_per_thread,10,f);
+    print_avg_stat(stat_wait_time_per_thread,f);
+    stat_wait_time_per_thread.clear();
+    std::map<unsigned, std::vector<tuple_lat_thread> >::iterator iter = finished_cycle_per_pc.begin();
+    for(;iter!=finished_cycle_per_pc.end();iter++){
+        sort(iter->second.begin(),iter->second.end());
+    }
+    permutate_thread_non_regfile(finished_cycle_per_pc,pc_warp,f);
+    fprintf(f,"stalls caused by long latency load:%f%\n",(float)m_shader_stats->shader_cycle_distro[3]/gpu_tot_sim_cycle*100/15);
+    fprintf(f,"------------------------------------------------END OF Kernel------------------------------------------------\n");
+    //print memory divegence stats, added by gh
+    fprintf(f,"gpgpu-sim num_warp_memory_access: %llu\n",m_shader_stats->m_num_warp_memory_access );
+    if (m_shader_stats->m_num_warp_memory_access) {
+        fprintf(f,"gpgpu-sim Average coalesed accesses: %f\n", (float)m_shader_stats->m_average_coalesced_access_per_load/m_shader_stats->m_num_warp_memory_access);
+        fprintf(f,"gpgpu-sim Percentage of uncoalesed load: %f\n", (float)m_shader_stats->m_num_uncoalesced_load/m_shader_stats->m_num_warp_memory_access*100);
+        fprintf(f,"gppgu-sim Average first latency: %f\n", (float)m_shader_stats->m_average_first_latency/m_shader_stats->m_num_warp_memory_access);
+        fprintf(f,"gppgu-sim Average last latency: %f\n", (float)m_shader_stats->m_average_last_latency/m_shader_stats->m_num_warp_memory_access);
+        fprintf(f,"gppgu-sim Average latency gap: %f\n", (float)(m_shader_stats->m_average_last_latency+m_shader_stats->m_average_first_latency)/m_shader_stats->m_num_warp_memory_access);
+    }
+    finished_cycle_per_pc.clear();//release finished_cycle_per_pc
+    //print_lat_histogram(lat_dist,f);
+    fflush(f);
+    fclose(f);
 }
 
 void gpgpu_sim::deadlock_check()

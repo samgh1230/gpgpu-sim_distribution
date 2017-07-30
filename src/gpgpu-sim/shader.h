@@ -788,13 +788,6 @@ private:
          m_warp_id = -1;
          m_num_banks = 0;
          m_bank_warp_shift = 0;
-
-         //added by gh
-         m_first_opnd_latency = 0;
-         m_last_opnd_latency = 0;
-         m_allocation_timestamp = 0;
-         m_allocated = false;
-         m_fetched_first = false;
       }
       // accessors
       bool ready() const;
@@ -841,9 +834,8 @@ private:
       unsigned m_bank_warp_shift;
       opndcoll_rfu_t *m_rfu;
 
-      unsigned long long m_first_opnd_latency, m_last_opnd_latency;
-      unsigned long long m_allocation_timestamp;
-      bool m_allocated, m_fetched_first;
+      //unsigned long long m_first_opnd_latency, m_last_opnd_latency;
+      //unsigned long long m_allocation_timestamp;
    };
 
    class dispatch_unit_t {
@@ -1470,7 +1462,8 @@ public:
         m_write_regfile_acesses= (unsigned*) calloc(config->num_shader(),sizeof(unsigned));
         m_non_rf_operands=(unsigned*) calloc(config->num_shader(),sizeof(unsigned));
         m_n_diverge = (unsigned*) calloc(config->num_shader(),sizeof(unsigned));
-        shader_cycle_distro = (unsigned*) calloc(config->warp_size+3, sizeof(unsigned));
+        //add load dependence, size + 1, added by gh
+        shader_cycle_distro = (unsigned*) calloc(config->warp_size+4, sizeof(unsigned));
         last_shader_cycle_distro = (unsigned*) calloc(m_config->warp_size+3, sizeof(unsigned));
 
         n_simt_to_mem = (long *)calloc(config->num_shader(), sizeof(long));
@@ -1525,6 +1518,42 @@ public:
         return m_shader_warp_slot_issue_distro;
     }
 
+
+    //struct for record latency and active threads of each access, added by gh
+    struct lat_and_thread {
+        std::vector<unsigned> lat;
+        std::vector<unsigned> nthreads;
+        std::vector<unsigned,
+        unsigned n_access;
+
+        lat_and_thread& operator=(const lat_and_thread& a){
+            lat = a.lat;
+            nthreads = a.nthreads;
+            n_access = a.n_access;
+            return *this;
+        }
+
+        void print_lats(FILE* fp){
+            if(lat.size()!=n_access){
+                printf("number of access is not equal! %u,%u\n",lat.size(),n_access);
+                exit(1);
+            }
+            for(unsigned i=0; i<lat.size(); i++)
+                fprintf(fp,"%u\t",lat[i]);
+        }
+
+        void print_nthreads(FILE* fp){
+            for(unsigned i=0; i<nthreads.size();i++)
+                fprintf(fp,"%u\t",nthreads[i]);
+        }
+    };
+
+    std::map<unsigned,std::map<unsigned, std::map<unsigned, std::map<unsigned long long, struct lat_and_thread > > > >& get_acc_lat()
+    {
+        return m_mem_acc_lat;
+    }
+
+
 private:
     const shader_core_config *m_config;
 
@@ -1536,6 +1565,9 @@ private:
     std::vector<unsigned> m_last_shader_dynamic_warp_issue_distro;
     std::vector< std::vector<unsigned> > m_shader_warp_slot_issue_distro;
     std::vector<unsigned> m_last_shader_warp_slot_issue_distro;
+    //collect load inst latency, added by gh
+    //std::map<unsigned,std::map<unsigned, std::map<unsigned long long, std::vector<unsigned>>>> m_mem_acc_lat;
+    std::map<unsigned,std::map<unsigned,std::map<unsigned, std::map<unsigned long long, struct lat_and_thread>>>> m_mem_acc_lat;
 
     friend class power_stat_t;
     friend class shader_core_ctx;

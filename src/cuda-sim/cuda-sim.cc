@@ -1353,13 +1353,15 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
       if (space_type) StatAddSample( g_inst_classification_stat[g_ptx_kernel_count], ( int )space_type);
       StatAddSample( g_inst_op_classification_stat[g_ptx_kernel_count], (int)  pI->get_opcode() );
    }
-   if ( (g_ptx_sim_num_insn % 100000) == 0 ) {
-      dim3 ctaid = get_ctaid();
-      dim3 tid = get_tid();
+
+   // running info output, del by gh
+   //if ( (g_ptx_sim_num_insn % 100000) == 0 ) {
+      //dim3 ctaid = get_ctaid();
+      //dim3 tid = get_tid();
       //printf("GPGPU-Sim PTX: %u instructions simulated : ctaid=(%u,%u,%u) tid=(%u,%u,%u)\n",
              //g_ptx_sim_num_insn, ctaid.x,ctaid.y,ctaid.z,tid.x,tid.y,tid.z );
-      fflush(stdout);
-   }
+      //fflush(stdout);
+   //}
 
    // "Return values"
    if(!skip) {

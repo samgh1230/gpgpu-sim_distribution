@@ -332,7 +332,7 @@ protected:
     };
 
     std::deque<simt_stack_entry> m_stack;
-};
+};//end of simt stack
 
 #define GLOBAL_HEAP_START 0x80000000
    // start allocating from this address (lower values used for allocating globals in .ptx file)
@@ -855,6 +855,7 @@ public:
         cycles = initiation_interval;
         m_cache_hit=false;
         m_empty=false;
+        //printf("warp issue. warp_id:%u, uid:%u, pc:%u, cycle:%llu\n",warp_id,m_uid,pc,issue_cycle);
     }
     const active_mask_t & get_active_mask() const
     {
@@ -890,6 +891,7 @@ public:
     void set_first_latency(unsigned long long latency) {m_first_latency = latency;}
     void set_last_latency(unsigned long long latency) {m_last_latency = latency;}
     unsigned get_num_access() const {return m_num_coalesced_access;}
+    std::vector<unsigned> get_nthreads_per_access() {return nthreads_per_access;}
 
     struct transaction_info {
         std::bitset<4> chunks; // bitmask: 32-byte chunks accessed
@@ -961,6 +963,7 @@ public:
         return m_per_scalar_thread[n].memreqaddr[0];
     }
 
+
     bool isatomic() const { return m_isatomic; }
 
     unsigned warp_size() const { return m_config->warp_size; }
@@ -1006,6 +1009,7 @@ protected:
     unsigned long long m_first_latency, m_last_latency; //load + store
     unsigned long long m_first_ld_latency, m_last_ld_latency; // load
     unsigned long long m_first_st_latency, m_last_st_latency; // store
+    std::vector<unsigned> nthreads_per_access;
 
     struct per_thread_info {
         per_thread_info() {

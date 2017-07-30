@@ -411,7 +411,7 @@ void warp_inst_t::memory_coalescing_arch_13( bool is_write, mem_access_type acce
         for( t=subwarp_transactions.begin(); t !=subwarp_transactions.end(); t++ ) {
             new_addr_type addr = t->first;
             const transaction_info &info = t->second;
-
+            nthreads_per_access.push_back(info.active.count());
             memory_coalescing_arch_13_reduce_and_send(is_write, access_type, info, addr, segment_size);
 
         }
@@ -487,6 +487,8 @@ void warp_inst_t::memory_coalescing_arch_13_atomic( bool is_write, mem_access_ty
            for(t=transaction_list.begin(); t!=transaction_list.end(); t++) {
                // For each transaction
                const transaction_info &info = *t;
+               //collect nthreads per access
+               nthreads_per_access.push_back(t->active.count());
                memory_coalescing_arch_13_reduce_and_send(is_write, access_type, info, addr, segment_size);
            }
        }
