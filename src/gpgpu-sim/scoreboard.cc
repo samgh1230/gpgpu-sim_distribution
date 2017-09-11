@@ -39,52 +39,102 @@ Scoreboard::Scoreboard( unsigned sid, unsigned n_warps )
 	//Initialize size of table
 	reg_table.resize(n_warps);
 	longopregs.resize(n_warps);
+///add by gh
+    pending_accesses.resize(n_warps);
 }
 
 // Print scoreboard contents
-void Scoreboard::printContents() const
+//void Scoreboard::printContents() const
+//{
+	//printf("scoreboard contents (sid=%d): \n", m_sid);
+	//for(unsigned i=0; i<reg_table.size(); i++) {
+		//if(reg_table[i].size() == 0 ) continue;
+		//printf("  wid = %2d: ", i);
+		//std::set<unsigned>::const_iterator it;
+		//for( it=reg_table[i].begin() ; it != reg_table[i].end(); it++ )
+			//printf("%u ", *it);
+		//printf("\n");
+	//}
+//}
+
+void Scoreboard::reserveRegister(unsigned regnum, class warp_inst_t* inst)
 {
-	printf("scoreboard contents (sid=%d): \n", m_sid);
-	for(unsigned i=0; i<reg_table.size(); i++) {
-		if(reg_table[i].size() == 0 ) continue;
-		printf("  wid = %2d: ", i);
-		std::set<unsigned>::const_iterator it;
-		for( it=reg_table[i].begin() ; it != reg_table[i].end(); it++ )
-			printf("%u ", *it);
-		printf("\n");
-	}
+
+    active_mask_t active_mask = inst->get_active_mask();
+    int index;
+    for(index=0;index<MAX_WARP_SIZE;index++){
+        if(active_mask[index]){
+            unsigned tid = inst->get_thread_id(index);
+            unsigned wid = tid/MAX_WARP_SIZE;
+            unsigned lane = tid%MAX_WARP_SIZE;
+            if(reg_table[wid][regnum].test(lane)){
+                printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d).", m_sid, wid, regnum);
+                abort();
+            }
+            SHADER_DPRINTF( SCOREBOARD,
+                "Reserved Register - warp:%d, reg: %d\n", wid, regnum );
+            reg_table[wid][regnum].set(lane);
+        }
+    }
 }
 
-void Scoreboard::reserveRegister(unsigned wid, unsigned regnum)
+void Scoreboard::reserveLopRegister(unsigned regnum, class warp_inst_t* inst)
 {
-	if( !(reg_table[wid].find(regnum) == reg_table[wid].end()) ){
-		printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d).", m_sid, wid, regnum);
-        abort();
-	}
-    SHADER_DPRINTF( SCOREBOARD,
-                    "Reserved Register - warp:%d, reg: %d\n", wid, regnum );
-	reg_table[wid].insert(regnum);
+	active_mask_t active_mask = inst->get_active_mask();
+    int index;
+    for(index=0;index<MAX_WARP_SIZE;index++){
+        if(active_mask[index]){
+            unsigned tid = inst->get_thread_id(index);
+            unsigned wid = tid/MAX_WARP_SIZE;
+            unsigned lane = tid%MAX_WARP_SIZE;
+            if(longopregs[wid][regnum].test(lane)){
+                printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d).", m_sid, wid, regnum);
+                abort();
+            }
+            SHADER_DPRINTF( SCOREBOARD,
+                "Reserved Register - warp:%d, reg: %d\n", wid, regnum );
+            longopregs[wid][regnum].set(lane);
+        }
+    }
 }
-
 // Unmark register as write-pending
-void Scoreboard::releaseRegister(unsigned wid, unsigned regnum)
+void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst)
 {
-	if( !(reg_table[wid].find(regnum) != reg_table[wid].end()) )
-        return;
-    SHADER_DPRINTF( SCOREBOARD,
-                    "Release register - warp:%d, reg: %d\n", wid, regnum );
-	reg_table[wid].erase(regnum);
+    active_mask_t active_mask = inst->get_active_mask();
+    int i;
+    for(i=0;i<MAX_WARP_SIZE;i++){
+        if(active_mask[i]){
+            unsigned tid = inst->get_thread_id(i);
+            unsigned wid = tid/MAX_WARP_SIZE;
+            unsigned lane = tid%MAX_WARP_SIZE;
+            reg_table[wid][regnum].reset(lane);
+            longopregs[wid][regnum].reset(lane);
+        }
+    }
 }
 
-const bool Scoreboard::islongop (unsigned warp_id,unsigned regnum) {
-	return longopregs[warp_id].find(regnum) != longopregs[warp_id].end();
+const bool Scoreboard::islongop (unsigned regnum, warp_inst_t* inst) {
+    active_mask_t active_mask = inst->get_active_mask();
+    int i;
+    for(i=0;i<MAX_WARP_SIZE;i++){
+        if(active_mask[i]){
+            unsigned tid = inst->get_thread_id(i);
+            unsigned wid = tid/MAX_WARP_SIZE;
+            unsigned lane = tid%MAX_WARP_SIZE;
+            if(longopregs[wid][regnum].test(lane))
+                return true;
+        }
+    }
+    return false;
+
+	//return longopregs[warp_id].find(regnum) != longopregs[warp_id].end();
 }
 
-void Scoreboard::reserveRegisters(const class warp_inst_t* inst)
+void Scoreboard::reserveRegisters(class warp_inst_t* inst)
 {
     for( unsigned r=0; r < 4; r++) {
         if(inst->out[r] > 0) {
-            reserveRegister(inst->warp_id(), inst->out[r]);
+            reserveRegister(inst->out[r], inst);
             SHADER_DPRINTF( SCOREBOARD,
                             "Reserved register - warp:%d, reg: %d\n",
                             inst->warp_id(),
@@ -106,14 +156,17 @@ void Scoreboard::reserveRegisters(const class warp_inst_t* inst)
                                 "New longopreg marked - warp:%d, reg: %d\n",
                                 inst->warp_id(),
                                 inst->out[r] );
-                longopregs[inst->warp_id()].insert(inst->out[r]);
+                //longopregs[inst->warp_id()].insert(inst->out[r]);
+                reserveLopRegister(inst->out[r],inst);
+                //added by gh
+                //pending_accesses[inst->warp_id()][inst].insert(inst->out[r]);
             }
     	}
     }
 }
 
 // Release registers for an instruction
-void Scoreboard::releaseRegisters(const class warp_inst_t *inst)
+void Scoreboard::releaseRegisters(class warp_inst_t *inst)
 {
     for( unsigned r=0; r < 4; r++) {
         if(inst->out[r] > 0) {
@@ -121,10 +174,12 @@ void Scoreboard::releaseRegisters(const class warp_inst_t *inst)
                             "Register Released - warp:%d, reg: %d\n",
                             inst->warp_id(),
                             inst->out[r] );
-            releaseRegister(inst->warp_id(), inst->out[r]);
-            longopregs[inst->warp_id()].erase(inst->out[r]);
+            releaseRegister(inst->out[r],inst);
+            //longopregs[inst->warp_id()].erase(inst->out[r]);
         }
     }
+    //added by gh
+    pending_accesses[inst->warp_id()].erase(inst);
 }
 
 /**
@@ -133,7 +188,7 @@ void Scoreboard::releaseRegisters(const class warp_inst_t *inst)
  * @return
  * true if WAW or RAW hazard (no WAR since in-order issue)
  **/
-bool Scoreboard::checkCollision( unsigned wid, const class inst_t *inst ) const
+bool Scoreboard::checkCollision( class warp_inst_t *inst )
 {
 	// Get list of all input and output registers
 	std::set<int> inst_regs;
@@ -152,16 +207,28 @@ bool Scoreboard::checkCollision( unsigned wid, const class inst_t *inst ) const
 
 	// Check for collision, get the intersection of reserved registers and instruction registers
 	std::set<int>::const_iterator it2;
-	for ( it2=inst_regs.begin() ; it2 != inst_regs.end(); it2++ )
-		if(reg_table[wid].find(*it2) != reg_table[wid].end()) {
-			return true;
-		}
-	return false;
+    active_mask_t active_mask = inst->get_active_mask();
+    for ( it2=inst_regs.begin() ; it2 != inst_regs.end(); it2++ ){
+        unsigned i;
+        for(i=0;i<MAX_WARP_SIZE;i++){
+            if(active_mask.test(i)){
+                unsigned tid = inst->get_thread_id(i);
+                unsigned wid = tid/MAX_WARP_SIZE;
+                unsigned lane = tid%MAX_WARP_SIZE;
+                if(reg_table[wid][*it2].test(lane))
+                    return true;
+            }
+        }
+    }
+    return false;
+		//if(reg_table[wid].find(*it2) != reg_table[wid].end()) {
+			//return true;
+		//}
+	//return false;
 }
 //check load dependence, added by gh
-bool Scoreboard::checkCollisionLD(unsigned wid, const class inst_t *inst) const
-{
-    if(checkCollision(wid,inst))
+bool Scoreboard::checkCollisionLD(class warp_inst_t *inst) {
+    if(checkCollision(inst))
     {
         std::set<int> inst_regs;
 
@@ -173,13 +240,43 @@ bool Scoreboard::checkCollisionLD(unsigned wid, const class inst_t *inst) const
 
     	// Check for collision, get the intersection of reserved registers and instruction registers
 	    std::set<int>::const_iterator it2;
-    	for ( it2=inst_regs.begin() ; it2 != inst_regs.end(); it2++ )
-	    	if(longopregs[wid].find(*it2) != longopregs[wid].end()) {
-		    	return true;
-    		}
+        active_mask_t active_mask = inst->get_active_mask();
+        for ( it2=inst_regs.begin() ; it2 != inst_regs.end(); it2++ ){
+            unsigned i;
+            for(i=0;i<MAX_WARP_SIZE;i++){
+                if(active_mask.test(i)){
+                     unsigned tid = inst->get_thread_id(i);
+                    unsigned wid = tid/MAX_WARP_SIZE;
+                    unsigned lane = tid%MAX_WARP_SIZE;
+                    if(longopregs[wid][*it2].test(lane))
+                        return true;
+                }
+            }
+        }
 	    return false;
     }
     else false;
+}
+
+//get depend inst, added by gh
+warp_inst_t* Scoreboard::getDepInst(unsigned wid, const class warp_inst_t *inst)
+{
+    std::set<int> inst_regs;
+    if(inst->in[0] > 0) inst_regs.insert(inst->in[0]);
+    if(inst->in[1] > 0) inst_regs.insert(inst->in[1]);
+    if(inst->in[2] > 0) inst_regs.insert(inst->in[2]);
+    if(inst->in[3] > 0) inst_regs.insert(inst->in[3]);
+
+    std::set<int>::iterator it;
+    std::map<warp_inst_t*, std::set<unsigned> >::iterator it_inst = pending_accesses[wid].begin();
+    for(;it_inst!=pending_accesses[wid].end();it_inst++){
+        for(it=inst_regs.begin();it!=inst_regs.end();it++){
+            if(it_inst->second.find(*it) != it_inst->second.end()){
+                return it_inst->first;
+            }
+        }
+    }
+    return NULL;
 }
 
 bool Scoreboard::pendingWrites(unsigned wid) const

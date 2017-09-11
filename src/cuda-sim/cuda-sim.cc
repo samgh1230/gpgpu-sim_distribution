@@ -1394,6 +1394,12 @@ const warp_inst_t *ptx_fetch_inst( address_type pc )
     return function_info::pc_to_instruction(pc);
 }
 
+warp_inst_t *ptx_fetch_inst_n( address_type pc )
+{
+    return function_info::pc_to_instruction_n(pc);
+}
+
+
 unsigned ptx_sim_init_thread( kernel_info_t &kernel,
                               ptx_thread_info** thread_info,
                               int sid,

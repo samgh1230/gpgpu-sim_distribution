@@ -36,31 +36,40 @@
 
 #include "../abstract_hardware_model.h"
 
+
 class Scoreboard {
 public:
     Scoreboard( unsigned sid, unsigned n_warps );
 
-    void reserveRegisters(const warp_inst_t *inst);
-    void releaseRegisters(const warp_inst_t *inst);
-    void releaseRegister(unsigned wid, unsigned regnum);
+    void reserveRegisters( warp_inst_t *inst);
+    void releaseRegisters(warp_inst_t *inst);
+    void releaseRegister(unsigned regnum,warp_inst_t* inst);
 
-    bool checkCollision(unsigned wid, const inst_t *inst) const;
+    bool checkCollision(warp_inst_t *inst) ;
     //check load dependence, added by gh
-    bool checkCollisionLD(unsigned wid, const class inst_t *inst) const;
+    bool checkCollisionLD(class warp_inst_t *inst) ;
+    warp_inst_t* getDepInst(unsigned wid, const class warp_inst_t *inst);
+
     bool pendingWrites(unsigned wid) const;
-    void printContents() const;
-    const bool islongop(unsigned warp_id, unsigned regnum);
+    //void printContents() const;
+    const bool islongop(unsigned regnum,warp_inst_t* inst);
 private:
-    void reserveRegister(unsigned wid, unsigned regnum);
+    void reserveRegister(unsigned regnum, class warp_inst_t* inst);
+    void reserveLopRegister(unsigned regnum, warp_inst_t* inst);
     int get_sid() const { return m_sid; }
 
     unsigned m_sid;
 
     // keeps track of pending writes to registers
     // indexed by warp id, reg_id => pending write count
-    std::vector< std::set<unsigned> > reg_table;
+    //std::vector< std::set<unsigned> > reg_table;
     //Register that depend on a long operation (global, local or tex memory)
-    std::vector< std::set<unsigned> > longopregs;
+    //std::vector< std::set<unsigned> > longopregs;
+
+    std::vector< std::map< warp_inst_t*, std::set<unsigned> > > pending_accesses;
+
+    std::vector< std::vector< std::bitset<MAX_WARP_SIZE> > >  reg_table;//wid:reg_id:thread_active
+    std::vector< std::vector< std::bitset<MAX_WARP_SIZE> > >  longopregs;//wid:reg_id:thread_active
 };
 
 

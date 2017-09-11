@@ -637,6 +637,7 @@ public:
       m_write = wr;
    }
 
+
    new_addr_type get_addr() const { return m_addr; }
    void set_addr(new_addr_type addr) {m_addr=addr;}
    unsigned get_size() const { return m_req_size; }
@@ -832,6 +833,8 @@ public:
         m_first_st_latency = 0;
         m_last_st_latency = 0;
 
+        dwf_flag = false;
+
     }
     virtual ~warp_inst_t(){
     }
@@ -844,7 +847,7 @@ public:
     {
         m_empty=true;
     }
-    void issue( const active_mask_t &mask, unsigned warp_id, unsigned long long cycle, int dynamic_warp_id )
+    void issue( const active_mask_t &mask, unsigned warp_id, unsigned long long cycle, int dynamic_warp_id, bool dwf_flag)
     {
         m_warp_active_mask = mask;
         m_warp_issued_mask = mask;
@@ -855,12 +858,15 @@ public:
         cycles = initiation_interval;
         m_cache_hit=false;
         m_empty=false;
+        if(dwf_flag) set_dwf_flag();
         //printf("warp issue. warp_id:%u, uid:%u, pc:%u, cycle:%llu\n",warp_id,m_uid,pc,issue_cycle);
     }
-    const active_mask_t & get_active_mask() const
+    const active_mask_t&  get_active_mask() const
     {
     	return m_warp_active_mask;
     }
+
+    active_mask_t get_active_mask() {return m_warp_active_mask;}
     void completed( unsigned long long cycle ) const;  // stat collection: called when the instruction is completed
 
     void set_addr( unsigned n, new_addr_type addr )
@@ -986,7 +992,15 @@ public:
 
     void print( FILE *fout ) const;
     unsigned get_uid() const { return m_uid; }
-
+    active_mask_t get_mask() {return m_warp_issued_mask;}
+    //set dwf thread, added by gh
+    void set_dwf_thread(std::vector<unsigned> thread_ids){
+        dwf_thread_id = thread_ids;
+    }
+    bool dwf_warp() {return dwf_flag;}
+    void set_dwf_flag() {dwf_flag=true;}
+    void clear_dwf_flag() {dwf_flag=false;}
+    unsigned get_thread_id(unsigned t) {return dwf_thread_id[t];}
 
 protected:
 
@@ -1025,6 +1039,10 @@ protected:
     std::list<mem_access_t> m_accessq;
 
     static unsigned sm_next_uid;
+
+    //thread id for dwf
+    std::vector<unsigned> dwf_thread_id;
+    bool dwf_flag;
 };
 
 void move_warp( warp_inst_t *&dst, warp_inst_t *&src );
@@ -1072,6 +1090,8 @@ class core_t {
         virtual void checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)=0;
         class gpgpu_sim * get_gpu() {return m_gpu;}
         void execute_warp_inst_t(warp_inst_t &inst, unsigned warpId =(unsigned)-1);
+        //added by gh
+        void execute_dwf_inst_t(warp_inst_t &inst, unsigned warpId =(unsigned)-1);
         bool  ptx_thread_done( unsigned hw_thread_id ) const ;
         void updateSIMTStack(unsigned warpId, warp_inst_t * inst);
         void initilizeSIMTStack(unsigned warp_count, unsigned warps_size);

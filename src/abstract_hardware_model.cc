@@ -413,7 +413,6 @@ void warp_inst_t::memory_coalescing_arch_13( bool is_write, mem_access_type acce
             const transaction_info &info = t->second;
             nthreads_per_access.push_back(info.active.count());
             memory_coalescing_arch_13_reduce_and_send(is_write, access_type, info, addr, segment_size);
-
         }
     }
 }
@@ -799,6 +798,19 @@ void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpId)
             m_thread[tid]->ptx_exec_inst(inst,t);
 
             //virtual function
+            checkExecutionStatusAndUpdate(inst,t,tid);
+        }
+    }
+}
+
+//execute dwf,added by gh
+void core_t::execute_dwf_inst_t(warp_inst_t &inst, unsigned warpId)
+{
+    for(unsigned t=0; t<m_warp_size; t++){
+        if(inst.active(t)){
+            unsigned tid=inst.get_thread_id(t);
+            m_thread[tid]->ptx_exec_inst(inst,t);
+
             checkExecutionStatusAndUpdate(inst,t,tid);
         }
     }
