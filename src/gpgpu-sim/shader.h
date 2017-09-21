@@ -55,7 +55,7 @@
 #include "gpu-cache.h"
 #include "traffic_breakdown.h"
 
-
+class Scoreboard;
 
 #define NO_OP_FLAG            0xFF
 
@@ -90,6 +90,8 @@ struct mapped_warp{
         address_type start_pc;
         std::vector<unsigned> thread_ids;
         std::bitset<MAX_WARP_SIZE> active_lanes;
+        std::deque<simt_stack_entry> stack_entry;
+        unsigned cta_id;
 };
 class shd_warp_t {
 public:
@@ -98,6 +100,10 @@ public:
     {
         m_stores_outstanding=0;
         m_inst_in_pipeline=0;
+        //init thread_ids,added by gh
+        thread_ids.resize(warp_size,-1);
+        dwf_flag=false;
+        swap_wait=false;
         reset();
     }
     void reset();
@@ -112,6 +118,9 @@ public:
     bool functional_done() const;
     bool waiting(); // not const due to membar
     bool hardware_done() const;
+    bool waiting_for_swap(){
+        return swap_wait;
+    }
 
     bool done_exit() const { return m_done_exit; }
     void set_done_exit() { m_done_exit=true; }
@@ -123,7 +132,9 @@ public:
     void set_completed( unsigned lane )
     {
         assert( m_active_threads.test(lane) );
-        m_active_threads.reset(lane);
+        //m_active_threads.reset(lane);
+        //thread_ids.clear();
+        //thread_ids.resize(MAX_WARP_SIZE,-1);
         n_completed++;
     }
 
@@ -147,6 +158,7 @@ public:
        assert(slot < IBUFFER_SIZE );
        m_ibuffer[slot].m_inst=pI;
        m_ibuffer[slot].m_valid=true;
+
        m_next=0;
     }
     bool ibuffer_empty() const
@@ -165,8 +177,32 @@ public:
             m_ibuffer[i].m_valid=false;
         }
     }
-    warp_inst_t *ibuffer_next_inst() { return m_ibuffer[m_next].m_inst; }
-    bool ibuffer_next_valid() { return m_ibuffer[m_next].m_valid; }
+
+    void print_ibuffer(){
+        printf("print ibuffer\n");
+        for(unsigned i=0;i<IBUFFER_SIZE;i++){
+            if(m_ibuffer[i].m_valid){
+                warp_inst_t* inst = m_ibuffer[i].m_inst;
+                //printf("inst %s\n",ptx_get_insn_str(inst->pc).c_str());
+                printf("ibuf[%d] has threads\n",i);
+                for(unsigned j=0;j<MAX_WARP_SIZE;j++){
+                    printf("%d\t",inst->get_thread_id(j));
+                }
+                printf("\n");
+            }
+        }
+    }
+    warp_inst_t *ibuffer_next_inst() {
+       return m_ibuffer[m_next].m_inst;
+    }
+    bool ibuffer_next_valid() {
+        if(!m_ibuffer[m_next].m_valid){
+            printf("m_next:%d\n",m_next);
+            print_ibuffer();
+        }
+
+        return m_ibuffer[m_next].m_valid;
+    }
     void ibuffer_free()
     {
         m_ibuffer[m_next].m_inst = NULL;
@@ -210,17 +246,58 @@ public:
     unsigned get_dynamic_warp_id() const { return m_dynamic_warp_id; }
     unsigned get_warp_id() const { return m_warp_id; }
 
-    //map dwf to hardware warp,added by gh
-    void map_dwf(unsigned wid, struct mapped_warp* mw){
-        dwf_flag = true;
+    //release warp due to long latency for load, added by gh
+    void release_warp()
+    {
         ibuffer_flush();
-        m_active_threads = mw->active_lanes;
-        n_completed = m_warp_size - m_active_threads.count();
-        set_next_pc(mw->start_pc);
-        clear_imiss_pending();
-        m_next = 0;
+        //clear_imiss_pending();
+
+        dwf_flag=false;
+        swap_wait=true;
+
+        //m_imiss_pending=false;
+        //n_completed = m_warp_size;
+        //m_n_atomic=0;
+        m_membar=false;
+        //m_done_exit=true;
+        m_last_fetch=0;
+        m_next=0;
+        m_next_pc=0;
+        //m_inst_at_barrier=NULL;
     }
-    bool dwf_warp() {return dwf_flag;}
+    //map dwf to hardware warp,added by gh
+    void map_dwf(unsigned wid, struct mapped_warp* mw);
+    bool get_dwf_flag() {return dwf_flag;}
+    void set_dwf_flag() {dwf_flag=true;}
+    void clear_dwf_flag() {dwf_flag=false;}
+
+    bool get_resume_flag() {return resume_flag;}
+    void set_resume_flag() {resume_flag=true;}
+    void clear_resume_flag() {resume_flag=false;}
+
+    void add_thread(unsigned tid,unsigned warp_id){
+        unsigned lane=tid%MAX_WARP_SIZE;
+        assert(thread_ids[lane]==-1);
+        thread_ids[lane]=tid;
+        m_active_threads.set(lane);
+    }
+
+    void set_thread_ids(std::vector<unsigned> threads){
+        thread_ids = threads;
+    }
+
+    std::vector<unsigned> get_thread_ids(){
+        return thread_ids;
+    }
+
+    active_mask_t get_active_mask(){
+        return m_active_threads;
+    }
+
+
+    void set_warp_id(unsigned wid) {m_warp_id=wid;}
+    void set_dynamic_warp_id(unsigned wid) {m_dynamic_warp_id = wid;}
+    void set_cta_id(unsigned cta_id) {m_cta_id=cta_id;}
 
 private:
     static const unsigned IBUFFER_SIZE=2;
@@ -258,11 +335,14 @@ private:
 
     //dwf flag for dwf, added by gh
     bool dwf_flag;
+    bool resume_flag;
+    std::vector<unsigned> thread_ids;
+    bool swap_wait;
 };
 
 //class for dynamic warp formation unit,added by gh
 #define MAX_WARPS_PER_SM MAX_THREAD_PER_SM/MAX_WARP_SIZE
-#define DW_ISSUE_THRESHOLD  100
+#define DW_ISSUE_THRESHOLD  10
 
 
 struct unmapped_warp{
@@ -271,15 +351,22 @@ struct unmapped_warp{
         std::vector<unsigned> thread_ids;
         std::bitset<MAX_WARP_SIZE> active_lanes;
         address_type pc;
+        std::deque<simt_stack_entry> stack_entry;
+        unsigned cta_id;
 };
 
-struct threads{
+struct thread_t{
         const warp_inst_t* inst;
-        warp_inst_t* dep_inst;
-        unsigned remain_active;
-        std::vector<unsigned> thread_ids;
-        std::bitset<MAX_WARP_SIZE> active_lanes;
-        std::bitset<MAX_WARP_SIZE> ready_lanes;
+        address_type pc;
+        std::set<unsigned> regs;
+        bool ready2issue;
+        std::deque<simt_stack_entry> stack_entry;
+        unsigned cta_id;
+        //warp_inst_t* dep_inst;
+        //unsigned remain_active;
+        //std::vector<unsigned> thread_ids;
+        //std::bitset<MAX_WARP_SIZE> active_lanes;
+        //std::bitset<MAX_WARP_SIZE> ready_lanes;
 };
 class dwf_unit{
 public:
@@ -290,6 +377,18 @@ public:
             dwf2hw_warp.push_back(warp_ptr);
         }
         mapped_hw_warp.reset();//is not right when not all warp are assigned
+
+        thread_pool.resize(MAX_WARPS_PER_SM);
+        unsigned i;
+        for(i=0;i<MAX_WARPS_PER_SM;i++){
+            thread_pool[i].resize(MAX_WARP_SIZE);
+            unsigned j;
+            for(j=0;j<MAX_WARP_SIZE;j++){
+                thread_pool[i][j].ready2issue=false;
+                thread_pool[i][j].pc=0;
+            }
+        }
+        num_thread_in_pool=0;
     }
 
 
@@ -299,166 +398,35 @@ public:
             delete(*it);
     }
 
-    unsigned find_free_hw_warp(){
-        unsigned i;
-        for(i=0;i<MAX_WARPS_PER_SM;i++){
-            if(!mapped_hw_warp.test(i))
-                return i;
-        }
-        return -1;
-    }
+    void set_warp_active(unsigned wid);
+    unsigned get_active_warp(){return mapped_hw_warp.count();}
+    unsigned find_free_hw_warp();
 
-    void free_hw_warp(unsigned wid){
-        mapped_hw_warp.reset(wid);
-    }
+    void free_hw_warp(unsigned wid);
 
-    void get_hw_warp(unsigned wid){
-        mapped_hw_warp.set(wid);
-    }
-
-    void add_thread2pool (const warp_inst_t* inst,warp_inst_t* dep_inst){
-        threads thd;
-        unsigned i;
-        for(i=0;i<MAX_WARP_SIZE;i++){
-            if(inst->get_active_mask().test(i))
-                thd.active_lanes.set(i);
-        }
-        thd.thread_ids.resize(MAX_WARP_SIZE);
-        unsigned wid = inst->warp_id();
-        unsigned j = 0;
-        //unsigned warp_size = m_shader->get_config()->warp_size;
-        unsigned warp_size = MAX_WARP_SIZE;
-        for(unsigned i = wid* warp_size; i<(wid+1)*warp_size; i++,j++) {
-            if(thd.active_lanes.test(j))
-                thd.thread_ids[j] = i;
-        }
-        thd.dep_inst = dep_inst;
-        thd.ready_lanes.reset();
-        thd.inst = inst;
-        thd.remain_active = thd.active_lanes.count();
-        thread_pool[inst->pc].push_back(thd);
-    }
-
-    void update_thread_pool (mem_fetch *mf){
-        active_mask_t active_lanes = mf->get_access_warp_mask();
-        warp_inst_t  inst = mf->get_inst();
-        std::list<threads>::iterator it = thread_pool[inst.pc].begin();
-        address_type pc = inst.pc;
-        unsigned wid = inst.warp_id();
-        for(;it!=thread_pool[inst.pc].end();it++){
-            if(it->inst->pc == pc && it->inst->warp_id() == wid){
-                it->ready_lanes = active_lanes;
-            }
-        }
-    }
+    void add_thread2pool ( warp_inst_t* inst, unsigned tid, std::set<unsigned> regs, std::deque<simt_stack_entry> stack, unsigned cta_id);
+    void update_thread_pool (mem_fetch *mf);
+    void update_thread_pool(warp_inst_t* inst);
 
     //void issue_dynamic_warp ();
-    void select_thread_from_pool(){
-        std::map< address_type, std::list<threads> > :: iterator it;
-        for(it=thread_pool.begin();it!=thread_pool.end();it++){
-            address_type m_pc = it->first;
-            std::list<threads>::iterator it_thread;
-            for(it_thread=it->second.begin();it_thread!=it->second.end();it_thread++){
-                unmapped_warp* um = find_unmapped_warp(m_pc,*it_thread);
-                if(um)
-                    add_thread2unmapped(um,it_thread,m_pc);
-                else
-                    form_new_warp(it_thread,m_pc);
-            }
-        }
-    }
+    void select_thread_from_pool();
 
-    unmapped_warp* find_unmapped_warp(address_type pc, threads thd){
-        std::list<unmapped_warp*>::iterator it = unmapped_warps[pc].begin();
-        std::bitset<MAX_WARP_SIZE> thread_lanes = thd.ready_lanes;
-        unmapped_warp* res=NULL;
-        for(;it!=unmapped_warps[pc].end();it++){
-            std::bitset<MAX_WARP_SIZE> warp_lanes = (*it)->active_lanes;
-            unsigned i,j;
-            for(i=0,j=0;i<MAX_WARP_SIZE;i++,j++){
-                if(warp_lanes.test(i)&&thread_lanes.test(j))
-                    break;
-            }
-            if(i==MAX_WARP_SIZE)
-                return (*it);
-        }
-        return res;
-    }
+    unmapped_warp* find_unmapped_warp(address_type pc, unsigned tid, unsigned cta_id);
 
-    void add_thread2unmapped(unmapped_warp* um, std::list<threads>::iterator it, address_type pc){
-        std::bitset<MAX_WARP_SIZE> thd_ready_lanes = it->ready_lanes;
-        unsigned i;
-        for(i=0;i<MAX_WARP_SIZE;i++){
-            if(thd_ready_lanes.test(i)){
-                assert(!um->active_lanes.test(i));
-                um->thread_ids[i] = it->thread_ids[i];
-                um->active_lanes.set(i);
-            }
-        }
-        it->remain_active -= it->ready_lanes.count();
-        it->ready_lanes.reset();
+    void add_thread2unmapped(unmapped_warp* um, unsigned tid, unsigned cta_id);
 
-        if(!it->remain_active){
-            thread_pool[pc].erase(it);
-        }
-    }
+    void form_new_warp(unsigned tid, address_type pc, unsigned cta_id);
 
-    void form_new_warp(std::list<threads>::iterator it, address_type pc){
-        std::bitset<MAX_WARP_SIZE> thd_ready_lanes = it->ready_lanes;
-        unmapped_warp* um = new unmapped_warp;
-        um->thread_ids.resize(MAX_WARP_SIZE);
-        um->active_lanes = it->ready_lanes;
-        um->thread_ids = it->thread_ids;
-        um->pc = it->inst->pc;
-        um->ready2issue = (um->active_lanes.count()==MAX_WARP_SIZE)?true:false;
-        um->cycles_wait2issue = 0;
-        unmapped_warps[um->pc].push_back(um);
+    bool is_ready2issue(unmapped_warp* uw);
 
-        it->remain_active -= it->ready_lanes.count();
-        it->ready_lanes.reset();
-
-        if(!it->remain_active){
-            thread_pool[pc].erase(it);
-        }
-    }
-
-    bool is_ready2issue(unmapped_warp* uw){
-        if (uw->active_lanes == MAX_WARP_SIZE)
-            return true;
-        else if(uw->cycles_wait2issue >= DW_ISSUE_THRESHOLD)
-            return true;
-        else return false;
-    }
-
-    void map_warp2ibuf(unmapped_warp* uw, unsigned wid){
-        //TO DO: clear ibuf(ibuf can be cleared when adding its threads into pool) and fetch inst from pc
-        dwf2hw_warp[wid]->thread_ids = uw->thread_ids;
-        dwf2hw_warp[wid]->active_lanes = uw->active_lanes;
-        dwf2hw_warp[wid]->start_pc = uw->pc;
-    }
+    void map_warp2ibuf(unmapped_warp* uw, unsigned wid);
     void cycle();
 
-    bool has_free_hw_warp() {return (mapped_hw_warp.count()<MAX_WARPS_PER_SM)?true:false;}
+    bool has_free_hw_warp();
 
-    void enqueue_and_update_unmapped(){
-        std::map<address_type, std::list<unmapped_warp*> > :: iterator iter;
-        for(iter=unmapped_warps.begin();iter!=unmapped_warps.end();iter++){
-            std::list<unmapped_warp*>::iterator it = iter->second.begin();
-            for(;it!=iter->second.begin();it++){
-                bool ready = is_ready2issue(*it);
-                if (ready)  {
-                    ready_unmapped_warps.push(*it);
-                    iter->second.erase(it);
-                }
-                else{
-                    (*it)->cycles_wait2issue ++;
-                }
-            }
-        }
-    }
-    std::vector<unsigned> get_dwf_thread(unsigned warp_id){
-        return dwf2hw_warp[warp_id]->thread_ids;
-    }
+    void enqueue_and_update_unmapped();
+    std::vector<unsigned> get_dwf_thread(unsigned warp_id);
+    unsigned num_thread_in_pool;
 private:
     std::bitset<MAX_WARPS_PER_SM> mapped_hw_warp;
 
@@ -467,8 +435,14 @@ private:
     std::map<address_type, std::list<unmapped_warp*> >unmapped_warps;
     std::queue<unmapped_warp*> ready_unmapped_warps;
 
-    std::map<address_type, std::list<threads> > thread_pool;
+    //std::map<unsigned, std::list<threads> > thread_pool;
+    std::vector< std::vector<thread_t> >  thread_pool;
     class shader_core_ctx *m_shader;
+
+
+
+
+    std::set<unsigned> threads;
 };
 
 inline unsigned hw_tid_from_wid(unsigned wid, unsigned warp_size, unsigned i){return wid * warp_size + i;};
@@ -1025,6 +999,8 @@ private:
       bool allocate( register_set* pipeline_reg, register_set* output_reg );
 
       void collect_operand( unsigned op );
+
+      warp_inst_t* get_inst() {return m_warp;}
       //void collect_operand( unsigned op )
       //{
          //m_not_ready.reset(op);
@@ -1123,6 +1099,11 @@ public:
 
    typedef std::map<unsigned, warp_set_t >  cta_to_warp_t;
    typedef std::map<unsigned, warp_set_t >  bar_id_to_warp_t; /*set of warps reached a specific barrier id*/
+
+   void deactive_warp_set(unsigned cta_id,unsigned wid);
+
+   void activate_warp_set(unsigned cta_id,unsigned wid);
+
 
 
    // individual warp hits barrier
@@ -1908,6 +1889,7 @@ public:
 
     void get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 
+    barrier_set_t& get_barrier() {return m_barriers;}
 // debug:
     void display_simt_state(FILE *fout, int mask ) const;
     void display_pipeline( FILE *fout, int print_mem, int mask3bit ) const;
@@ -2016,10 +1998,15 @@ public:
 	 void inc_simt_to_mem(unsigned n_flits){ m_stats->n_simt_to_mem[m_sid] += n_flits; }
 	 bool check_if_non_released_reduction_barrier(warp_inst_t &inst);
 
-     shd_warp_t get_warp_by_index(unsigned index){return m_warp[index];}
+     simt_stack* get_simt_stack(unsigned wid) {return m_simt_stack[wid];}
+
+     shd_warp_t& get_warp_by_index(unsigned index){return m_warp[index];}
 
      //added by gh
      dwf_unit* get_dwf_unit() {return m_dwf_unit;}
+     unsigned get_dynamic_warp_id() {return m_dynamic_warp_id;}
+     void inc_dynamic_warp_id() {m_dynamic_warp_id++;}
+     thread_ctx_t get_thread_ctx(unsigned tid) {return m_threadState[tid];}
 
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
@@ -2117,6 +2104,8 @@ private:
     // is that the dynamic_warp_id is a running number unique to every warp
     // run on this shader, where the warp_id is the static warp slot.
     unsigned m_dynamic_warp_id;
+
+    std::set<unsigned> threads_exit;
 
 };
 

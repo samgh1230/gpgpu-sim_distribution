@@ -35,20 +35,20 @@
 #define SCOREBOARD_H_
 
 #include "../abstract_hardware_model.h"
+#include "shader.h"
 
 
 class Scoreboard {
 public:
-    Scoreboard( unsigned sid, unsigned n_warps );
+    Scoreboard( unsigned sid, unsigned n_warps, class shader_core_ctx* shader );
 
     void reserveRegisters( warp_inst_t *inst);
     void releaseRegisters(warp_inst_t *inst);
     void releaseRegister(unsigned regnum,warp_inst_t* inst);
 
-    bool checkCollision(warp_inst_t *inst) ;
+    bool checkCollision(warp_inst_t *inst,unsigned warp_id) ;
     //check load dependence, added by gh
-    bool checkCollisionLD(class warp_inst_t *inst) ;
-    warp_inst_t* getDepInst(unsigned wid, const class warp_inst_t *inst);
+    bool checkCollisionLD(class warp_inst_t *inst, unsigned warp_id) ;
 
     bool pendingWrites(unsigned wid) const;
     //void printContents() const;
@@ -59,6 +59,7 @@ private:
     int get_sid() const { return m_sid; }
 
     unsigned m_sid;
+    class shader_core_ctx* m_shader;
 
     // keeps track of pending writes to registers
     // indexed by warp id, reg_id => pending write count

@@ -605,10 +605,24 @@ void simt_stack::launch( address_type start_pc, const simt_mask_t &active_mask )
     m_stack.push_back(new_stack_entry);
 }
 
+void simt_stack::launch_with_copy(std::deque<simt_stack_entry> stack)
+{
+    reset();
+    while(!stack.empty()){
+        m_stack.push_back(stack.front());
+        stack.pop_front();
+    }
+}
+
 const simt_mask_t &simt_stack::get_active_mask() const
 {
     assert(m_stack.size() > 0);
     return m_stack.back().m_active_mask;
+}
+
+std::deque<simt_stack_entry> simt_stack::get_stack_entry()
+{
+    return m_stack;
 }
 
 void simt_stack::get_pdom_stack_top_info( unsigned *pc, unsigned *rpc ) const
@@ -809,9 +823,16 @@ void core_t::execute_dwf_inst_t(warp_inst_t &inst, unsigned warpId)
     for(unsigned t=0; t<m_warp_size; t++){
         if(inst.active(t)){
             unsigned tid=inst.get_thread_id(t);
+            //m_thread[tid]->set_pc(inst.pc);
+            //if(m_thread[tid]->get_pc()!=inst.pc)
+                //printf("wid:%d, tid:%d.%s,\t,%s\n",inst.warp_id(),tid,ptx_get_insn_str( m_thread[tid]->get_pc()).c_str(),ptx_get_insn_str(inst.pc).c_str());
+            //printf("tid:%d\n",tid);
+            m_thread[tid]->set_hw_wid(inst.warp_id());
+            //printf("set_hw_wid\n");
             m_thread[tid]->ptx_exec_inst(inst,t);
-
+            //printf("end exec\n");
             checkExecutionStatusAndUpdate(inst,t,tid);
+            //printf("check\n");
         }
     }
 }
@@ -825,15 +846,20 @@ void core_t::updateSIMTStack(unsigned warpId, warp_inst_t * inst)
 {
     simt_mask_t thread_done;
     addr_vector_t next_pc;
-    unsigned wtid = warpId * m_warp_size;
+    //unsigned wtid = warpId * m_warp_size;
     for (unsigned i = 0; i < m_warp_size; i++) {
-        if( ptx_thread_done(wtid+i) ) {
+        unsigned tid=inst->get_thread_id(i);
+        if(tid==-1){
+            next_pc.push_back((address_type)-1);
+            continue;
+        }
+        if( ptx_thread_done(tid) ) {
             thread_done.set(i);
             next_pc.push_back( (address_type)-1 );
         } else {
             if( inst->reconvergence_pc == RECONVERGE_RETURN_PC )
-                inst->reconvergence_pc = get_return_pc(m_thread[wtid+i]);
-            next_pc.push_back( m_thread[wtid+i]->get_pc() );
+                inst->reconvergence_pc = get_return_pc(m_thread[tid]);
+            next_pc.push_back( m_thread[tid]->get_pc() );
         }
     }
     m_simt_stack[warpId]->update(thread_done,next_pc,inst->reconvergence_pc, inst->op,inst->isize,inst->pc);

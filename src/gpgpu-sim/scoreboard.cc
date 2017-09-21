@@ -29,18 +29,30 @@
 #include "shader.h"
 #include "../cuda-sim/ptx_sim.h"
 #include "shader_trace.h"
-
-
+#include "../cuda-sim/ptx-stats.h"
+#include "../cuda-sim/cuda-sim.h"
+#define NUM_REG 32768
 //Constructor
-Scoreboard::Scoreboard( unsigned sid, unsigned n_warps )
+Scoreboard::Scoreboard( unsigned sid, unsigned n_warps, shader_core_ctx* shader )
 : longopregs()
 {
 	m_sid = sid;
 	//Initialize size of table
 	reg_table.resize(n_warps);
 	longopregs.resize(n_warps);
+    unsigned i;
+    for(i=0;i<n_warps;i++){
+        reg_table[i].resize(NUM_REG);
+        longopregs[i].resize(NUM_REG);
+        unsigned j;
+        for(j=0;j<NUM_REG;j++){
+            reg_table[i][j].reset();
+            longopregs[i][j].reset();
+        }
+    }
+    m_shader = shader;
 ///add by gh
-    pending_accesses.resize(n_warps);
+    //pending_accesses.resize(n_warps)
 }
 
 // Print scoreboard contents
@@ -59,21 +71,21 @@ Scoreboard::Scoreboard( unsigned sid, unsigned n_warps )
 
 void Scoreboard::reserveRegister(unsigned regnum, class warp_inst_t* inst)
 {
-
     active_mask_t active_mask = inst->get_active_mask();
     int index;
+    if(regnum==18)
+    SHADER_DPRINTF( SCOREBOARD, "Reserved Register - sid:%d, reg:%d\n ",m_sid, regnum );
     for(index=0;index<MAX_WARP_SIZE;index++){
         if(active_mask[index]){
             unsigned tid = inst->get_thread_id(index);
             unsigned wid = tid/MAX_WARP_SIZE;
             unsigned lane = tid%MAX_WARP_SIZE;
             if(reg_table[wid][regnum].test(lane)){
-                printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d).", m_sid, wid, regnum);
+                printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d, tid:%d, %s\n).", m_sid, wid, regnum, tid,ptx_get_insn_str(inst->pc).c_str());
                 abort();
             }
-            SHADER_DPRINTF( SCOREBOARD,
-                "Reserved Register - warp:%d, reg: %d\n", wid, regnum );
             reg_table[wid][regnum].set(lane);
+            SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n",  wid, tid,active_mask.count(),ptx_get_insn_str(inst->pc).c_str());
         }
     }
 }
@@ -88,11 +100,9 @@ void Scoreboard::reserveLopRegister(unsigned regnum, class warp_inst_t* inst)
             unsigned wid = tid/MAX_WARP_SIZE;
             unsigned lane = tid%MAX_WARP_SIZE;
             if(longopregs[wid][regnum].test(lane)){
-                printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d).", m_sid, wid, regnum);
+                printf("Error: trying to reserve an already reserved long op register (sid=%d, wid=%d,tid:%d, regnum=%d, %s\n).", m_sid, wid,tid, regnum, ptx_get_insn_str(inst->pc).c_str());
                 abort();
             }
-            SHADER_DPRINTF( SCOREBOARD,
-                "Reserved Register - warp:%d, reg: %d\n", wid, regnum );
             longopregs[wid][regnum].set(lane);
         }
     }
@@ -100,6 +110,8 @@ void Scoreboard::reserveLopRegister(unsigned regnum, class warp_inst_t* inst)
 // Unmark register as write-pending
 void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst)
 {
+    if(regnum==18)
+    SHADER_DPRINTF( SCOREBOARD, "Release Register - sid:%d, reg:%d\n", m_sid, regnum );
     active_mask_t active_mask = inst->get_active_mask();
     int i;
     for(i=0;i<MAX_WARP_SIZE;i++){
@@ -109,6 +121,9 @@ void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst)
             unsigned lane = tid%MAX_WARP_SIZE;
             reg_table[wid][regnum].reset(lane);
             longopregs[wid][regnum].reset(lane);
+            SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n", wid, tid, active_mask.count(),ptx_get_insn_str( inst->pc).c_str());
+            //printf( "Register Released - warp:%d, tid:%d, reg: %d\n",
+                            //wid, tid, regnum);
         }
     }
 }
@@ -135,10 +150,6 @@ void Scoreboard::reserveRegisters(class warp_inst_t* inst)
     for( unsigned r=0; r < 4; r++) {
         if(inst->out[r] > 0) {
             reserveRegister(inst->out[r], inst);
-            SHADER_DPRINTF( SCOREBOARD,
-                            "Reserved register - warp:%d, reg: %d\n",
-                            inst->warp_id(),
-                            inst->out[r] );
         }
     }
 
@@ -149,17 +160,10 @@ void Scoreboard::reserveRegisters(class warp_inst_t* inst)
                 inst->space.get_type() == param_space_kernel ||
                 inst->space.get_type() == param_space_local ||
                 inst->space.get_type() == param_space_unclassified ||
-    			inst->space.get_type() == tex_space)){
+                inst->space.get_type() == tex_space) ){
     	for ( unsigned r=0; r<4; r++) {
     		if(inst->out[r] > 0) {
-                SHADER_DPRINTF( SCOREBOARD,
-                                "New longopreg marked - warp:%d, reg: %d\n",
-                                inst->warp_id(),
-                                inst->out[r] );
-                //longopregs[inst->warp_id()].insert(inst->out[r]);
                 reserveLopRegister(inst->out[r],inst);
-                //added by gh
-                //pending_accesses[inst->warp_id()][inst].insert(inst->out[r]);
             }
     	}
     }
@@ -170,16 +174,12 @@ void Scoreboard::releaseRegisters(class warp_inst_t *inst)
 {
     for( unsigned r=0; r < 4; r++) {
         if(inst->out[r] > 0) {
-            SHADER_DPRINTF( SCOREBOARD,
-                            "Register Released - warp:%d, reg: %d\n",
-                            inst->warp_id(),
-                            inst->out[r] );
             releaseRegister(inst->out[r],inst);
             //longopregs[inst->warp_id()].erase(inst->out[r]);
         }
     }
     //added by gh
-    pending_accesses[inst->warp_id()].erase(inst);
+    //pending_accesses[inst->warp_id()].erase(inst);
 }
 
 /**
@@ -188,7 +188,7 @@ void Scoreboard::releaseRegisters(class warp_inst_t *inst)
  * @return
  * true if WAW or RAW hazard (no WAR since in-order issue)
  **/
-bool Scoreboard::checkCollision( class warp_inst_t *inst )
+bool Scoreboard::checkCollision( class warp_inst_t *inst,unsigned warp_id)
 {
 	// Get list of all input and output registers
 	std::set<int> inst_regs;
@@ -207,12 +207,12 @@ bool Scoreboard::checkCollision( class warp_inst_t *inst )
 
 	// Check for collision, get the intersection of reserved registers and instruction registers
 	std::set<int>::const_iterator it2;
-    active_mask_t active_mask = inst->get_active_mask();
+    active_mask_t active_mask = m_shader->get_warp_by_index(warp_id).get_active_mask();
     for ( it2=inst_regs.begin() ; it2 != inst_regs.end(); it2++ ){
         unsigned i;
         for(i=0;i<MAX_WARP_SIZE;i++){
             if(active_mask.test(i)){
-                unsigned tid = inst->get_thread_id(i);
+                unsigned tid = m_shader->get_warp_by_index(warp_id).get_thread_ids()[i];
                 unsigned wid = tid/MAX_WARP_SIZE;
                 unsigned lane = tid%MAX_WARP_SIZE;
                 if(reg_table[wid][*it2].test(lane))
@@ -221,15 +221,9 @@ bool Scoreboard::checkCollision( class warp_inst_t *inst )
         }
     }
     return false;
-		//if(reg_table[wid].find(*it2) != reg_table[wid].end()) {
-			//return true;
-		//}
-	//return false;
 }
 //check load dependence, added by gh
-bool Scoreboard::checkCollisionLD(class warp_inst_t *inst) {
-    if(checkCollision(inst))
-    {
+bool Scoreboard::checkCollisionLD(class warp_inst_t *inst, unsigned warp_id) {
         std::set<int> inst_regs;
 
     	if(inst->in[0] > 0) inst_regs.insert(inst->in[0]);
@@ -237,49 +231,84 @@ bool Scoreboard::checkCollisionLD(class warp_inst_t *inst) {
     	if(inst->in[2] > 0) inst_regs.insert(inst->in[2]);
 	    if(inst->in[3] > 0) inst_regs.insert(inst->in[3]);
 
-
+        bool collision = false;
     	// Check for collision, get the intersection of reserved registers and instruction registers
-	    std::set<int>::const_iterator it2;
-        active_mask_t active_mask = inst->get_active_mask();
-        for ( it2=inst_regs.begin() ; it2 != inst_regs.end(); it2++ ){
-            unsigned i;
-            for(i=0;i<MAX_WARP_SIZE;i++){
+	    std::set<int>::const_iterator it2,it3;
+        std::set<unsigned> dep_regs;
+        shd_warp_t shd_warp=m_shader->get_warp_by_index(warp_id);
+        active_mask_t active_mask = m_shader->get_simt_stack(warp_id)->get_active_mask();
+
+
+        //if(m_shader->get_sid()==1)
+        /*printf("active threads:%u\n",active_mask.count());*/
+        unsigned i;
+        for(i=0;i<MAX_WARP_SIZE;i++){
+            collision=false;
+            unsigned tid=m_shader->get_warp_by_index(warp_id).get_thread_ids()[i];
+            for(it2=inst_regs.begin();it2!=inst_regs.end();it2++){
                 if(active_mask.test(i)){
-                     unsigned tid = inst->get_thread_id(i);
-                    unsigned wid = tid/MAX_WARP_SIZE;
-                    unsigned lane = tid%MAX_WARP_SIZE;
-                    if(longopregs[wid][*it2].test(lane))
-                        return true;
+                    unsigned wid=tid/MAX_WARP_SIZE;
+                    unsigned lane=tid%MAX_WARP_SIZE;
+                    if(longopregs[wid][*it2].test(lane)){
+                        collision=true;
+                        break;
+                    }
                 }
             }
-        }
-	    return false;
-    }
-    else false;
-}
+            if(collision){
+                if(m_shader->get_sid()==12)
+                    m_shader->get_simt_stack(warp_id)->print(stdout);
+                for(unsigned j=0;j<MAX_WARP_SIZE;j++){
+                    std::deque<simt_stack_entry> stack_entry = m_shader->get_simt_stack(warp_id)->get_stack_entry();
+                    unsigned tid=m_shader->get_warp_by_index(warp_id).get_thread_ids()[j];
+                    for(it3=inst_regs.begin();it3!=inst_regs.end();it3++){
+                        if(active_mask.test(j)){
+                            unsigned wid=tid/MAX_WARP_SIZE;
+                            unsigned lane=tid%MAX_WARP_SIZE;
+                            if(longopregs[wid][*it3].test(lane)){
+                                dep_regs.insert(*it3);
+                            }
+                        }
+                    }
+                    std::deque<simt_stack_entry>::iterator it;
+                    /*printf("1\n");*/
+                    for(it=stack_entry.begin();it!=stack_entry.end();){
+                        if(!it->m_active_mask.test(j))
+                            it = stack_entry.erase(it);
+                        else{
+                            it->m_active_mask.reset();
+                            it->m_active_mask.set(j);
+                            it++;
+                        }
+                    }
+                    /*printf("2\n");*/
+                    /*if(active_mask.test(j))*/
 
-//get depend inst, added by gh
-warp_inst_t* Scoreboard::getDepInst(unsigned wid, const class warp_inst_t *inst)
-{
-    std::set<int> inst_regs;
-    if(inst->in[0] > 0) inst_regs.insert(inst->in[0]);
-    if(inst->in[1] > 0) inst_regs.insert(inst->in[1]);
-    if(inst->in[2] > 0) inst_regs.insert(inst->in[2]);
-    if(inst->in[3] > 0) inst_regs.insert(inst->in[3]);
-
-    std::set<int>::iterator it;
-    std::map<warp_inst_t*, std::set<unsigned> >::iterator it_inst = pending_accesses[wid].begin();
-    for(;it_inst!=pending_accesses[wid].end();it_inst++){
-        for(it=inst_regs.begin();it!=inst_regs.end();it++){
-            if(it_inst->second.find(*it) != it_inst->second.end()){
-                return it_inst->first;
+                    if(tid!=-1&&!stack_entry.empty()){
+                        unsigned cta_id=m_shader->get_thread_ctx(tid).m_cta_id;
+                        m_shader->get_dwf_unit()->add_thread2pool(inst,tid,dep_regs,stack_entry,cta_id);
+                    }
+                    /*printf("3\n");*/
+                    dep_regs.clear();
+                }
+                break;
             }
         }
-    }
-    return NULL;
+
+        return collision;
 }
+
 
 bool Scoreboard::pendingWrites(unsigned wid) const
 {
-	return !reg_table[wid].empty();
+    unsigned i;
+    for(i=0;i<NUM_REG;i++){
+        if(reg_table[wid][i].count()>0){
+            //if(wid==0&&m_sid==7)
+                //printf("reg:%d has %d pending writes\n",i, reg_table[wid][i].count());
+            return true;
+        }
+    }
+    return false;
+	//return !reg_table[wid].empty();
 }

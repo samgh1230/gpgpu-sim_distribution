@@ -30,7 +30,7 @@
 #include <stdlib.h>
 
 #include "../abstract_hardware_model.h"
-#include "../tr1_hash_map.h" 
+#include "../tr1_hash_map.h"
 
 #include <assert.h>
 #include "opcodes.h"
@@ -73,7 +73,7 @@ union ptx_reg_t {
       f64=0;
       pred=0;
    }
-   ptx_reg_t(unsigned x) 
+   ptx_reg_t(unsigned x)
    {
       bits.ms = 0;
       bits.ls = 0;
@@ -126,7 +126,7 @@ union ptx_reg_t {
    unsigned short    u16;
    unsigned int      u32;
    unsigned long long   u64;
-   float             f16; 
+   float             f16;
    float          f32;
    double            f64;
    struct {
@@ -211,7 +211,7 @@ public:
          m_ptx_extensions = 0;
          m_sm_version_valid=false;
          m_texmode_unified=true;
-         m_map_f64_to_f32 = true; 
+         m_map_f64_to_f32 = true;
       }
       ptx_version(float ver, unsigned extensions)
       {
@@ -221,28 +221,28 @@ public:
          m_sm_version_valid=false;
          m_texmode_unified=true;
       }
-      void set_target( const char *sm_ver, const char *ext, const char *ext2 ) 
-      { 
+      void set_target( const char *sm_ver, const char *ext, const char *ext2 )
+      {
          assert( m_valid );
          m_sm_version_str = sm_ver;
-         check_target_extension(ext); 
-         check_target_extension(ext2); 
+         check_target_extension(ext);
+         check_target_extension(ext2);
          sscanf(sm_ver,"%u",&m_sm_version);
-         m_sm_version_valid=true; 
+         m_sm_version_valid=true;
       }
       float    ver() const { assert(m_valid); return m_ptx_version; }
       unsigned target() const { assert(m_valid&&m_sm_version_valid); return m_sm_version; }
       unsigned extensions() const { assert(m_valid); return m_ptx_extensions; }
 private:
-      void check_target_extension( const char *ext ) 
+      void check_target_extension( const char *ext )
       {
          if( ext ) {
-            if( !strcmp(ext,"texmode_independent") ) 
+            if( !strcmp(ext,"texmode_independent") )
                m_texmode_unified=false;
-            else if( !strcmp(ext,"texmode_unified") ) 
+            else if( !strcmp(ext,"texmode_unified") )
                m_texmode_unified=true;
-            else if( !strcmp(ext,"map_f64_to_f32") ) 
-               m_map_f64_to_f32 = true; 
+            else if( !strcmp(ext,"map_f64_to_f32") )
+               m_map_f64_to_f32 = true;
             else abort();
          }
       }
@@ -252,7 +252,7 @@ private:
       unsigned m_sm_version_valid;
       std::string m_sm_version_str;
       bool     m_texmode_unified;
-      bool     m_map_f64_to_f32; 
+      bool     m_map_f64_to_f32;
       unsigned m_sm_version;
       unsigned m_ptx_extensions;
 };
@@ -262,10 +262,10 @@ public:
    ~ptx_thread_info();
    ptx_thread_info( kernel_info_t &kernel );
 
-   void init(gpgpu_t *gpu, core_t *core, unsigned sid, unsigned cta_id, unsigned wid, unsigned tid, bool fsim) 
-   { 
+   void init(gpgpu_t *gpu, core_t *core, unsigned sid, unsigned cta_id, unsigned wid, unsigned tid, bool fsim)
+   {
       m_gpu = gpu;
-      m_core = core; 
+      m_core = core;
       m_hw_sid=sid;
       m_hw_ctaid=cta_id;
       m_hw_wid=wid;
@@ -283,15 +283,15 @@ public:
    void set_operand_value( const operand_info &dst, const ptx_reg_t &data, unsigned type, ptx_thread_info *thread, const ptx_instruction *pI );
    void set_operand_value( const operand_info &dst, const ptx_reg_t &data, unsigned type, ptx_thread_info *thread, const ptx_instruction *pI, int overflow, int carry );
    void get_vector_operand_values( const operand_info &op, ptx_reg_t* ptx_regs, unsigned num_elements );
-   void set_vector_operand_values( const operand_info &dst, 
-                                   const ptx_reg_t &data1, 
-                                   const ptx_reg_t &data2, 
-                                   const ptx_reg_t &data3, 
+   void set_vector_operand_values( const operand_info &dst,
+                                   const ptx_reg_t &data1,
+                                   const ptx_reg_t &data2,
+                                   const ptx_reg_t &data3,
                                    const ptx_reg_t &data4 );
 
    function_info *func_info()
    {
-      return m_func_info; 
+      return m_func_info;
    }
    void print_insn( unsigned pc, FILE * fp ) const;
    void set_info( function_info *func );
@@ -306,6 +306,7 @@ public:
    unsigned get_hw_tid() const { return m_hw_tid;}
    unsigned get_hw_ctaid() const { return m_hw_ctaid;}
    unsigned get_hw_wid() const { return m_hw_wid;}
+   void set_hw_wid(unsigned wid) {m_hw_wid=wid;}
    unsigned get_hw_sid() const { return m_hw_sid;}
    core_t *get_core() { return m_core; }
 
@@ -339,7 +340,7 @@ public:
    void set_ntid( dim3 tid ) { m_ntid = tid; }
    void set_nctaid( dim3 cta_size ) { m_nctaid = cta_size; }
 
-   unsigned get_builtin( int builtin_id, unsigned dim_mod ); 
+   unsigned get_builtin( int builtin_id, unsigned dim_mod );
 
    void set_done();
    bool is_done() { return m_thread_done;}
@@ -359,10 +360,16 @@ public:
    {
       return m_PC;
    }
+
+   void set_pc(address_type pc)
+   {
+       m_PC=pc;
+   }
    void set_npc( unsigned npc )
    {
       m_NPC = npc;
    }
+
    void set_npc( const function_info *f );
    void callstack_push( unsigned npc, unsigned rpc, const symbol *return_var_src, const symbol *return_var_dst, unsigned call_uid );
    bool callstack_pop();
@@ -408,10 +415,11 @@ public:
    void exitCore()
    {
        //m_core is not used in case of functional simulation mode
+       //printf("sid:%d,warp:%d,tid:%d exitCore\n",m_hw_sid,m_hw_wid,m_hw_tid);
        if(!m_functionalSimulationMode)
            m_core->warp_exit(m_hw_wid);
    }
-   
+
    void registerExit(){m_cta_info->register_thread_exit(this);}
    unsigned get_reduction_value(unsigned ctaid, unsigned barid) {return m_core->get_reduction_value(ctaid,barid);}
    void and_reduction(unsigned ctaid, unsigned barid, bool value) {m_core->and_reduction(ctaid,barid,value);}
@@ -422,7 +430,7 @@ public:
    addr_t         m_last_effective_address;
    bool        m_branch_taken;
    memory_space_t m_last_memory_space;
-   dram_callback_t   m_last_dram_callback; 
+   dram_callback_t   m_last_dram_callback;
    memory_space   *m_shared_mem;
    memory_space   *m_local_mem;
    ptx_cta_info   *m_cta_info;
@@ -430,7 +438,7 @@ public:
 
 private:
 
-   bool m_functionalSimulationMode; 
+   bool m_functionalSimulationMode;
    unsigned m_uid;
    kernel_info_t &m_kernel;
    core_t *m_core;

@@ -566,11 +566,9 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
     gpu_tot_issued_cta = 0;
     gpu_deadlock = false;
 
-
     m_cluster = new simt_core_cluster*[m_shader_config->n_simt_clusters];
     for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++)
         m_cluster[i] = new simt_core_cluster(this,i,m_shader_config,m_memory_config,m_shader_stats,m_memory_stats);
-
     m_memory_partition_unit = new memory_partition_unit*[m_memory_config->m_n_mem];
     m_memory_sub_partition = new memory_sub_partition*[m_memory_config->m_n_mem_sub_partition];
     for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
@@ -1301,7 +1299,11 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
         nthreads_in_block += ptx_sim_init_thread(kernel,&m_thread[i],m_sid,i,cta_size-(i-start_thread),m_config->n_thread_per_shader,this,free_cta_hw_id,warp_id,m_cluster->get_gpu());
         m_threadState[i].m_active = true;
         warps.set( warp_id );
+        //keep thread id in shd_warp_t,added by gh
+        m_warp[warp_id].add_thread(i,warp_id);
+        m_dwf_unit->set_warp_active(warp_id);
     }
+    //printf("active warp:%d\n",m_dwf_unit->get_active_warp());
     assert( nthreads_in_block > 0 && nthreads_in_block <= m_config->n_thread_per_shader); // should be at least one, but less than max
     m_cta_status[free_cta_hw_id]=nthreads_in_block;
 
@@ -1310,11 +1312,12 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
     m_barriers.allocate_barrier(free_cta_hw_id,warps);
 
     // initialize the SIMT stacks and fetch hardware
+    printf("init warps.start thread:%d, end_thread:%d,ctaid:%d\n",start_thread,end_thread,free_cta_hw_id);
     init_warps( free_cta_hw_id, start_thread, end_thread);
     m_n_active_cta++;
 
     shader_CTA_count_log(m_sid, 1);
-    //printf("GPGPU-Sim uArch: core:%3d, cta:%2u initialized @(%lld,%lld)\n", m_sid, free_cta_hw_id, gpu_sim_cycle, gpu_tot_sim_cycle );
+    printf("GPGPU-Sim uArch: core:%3d, cta:%2u initialized @(%lld,%lld)\n", m_sid, free_cta_hw_id, gpu_sim_cycle, gpu_tot_sim_cycle );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////

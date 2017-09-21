@@ -298,13 +298,32 @@ typedef std::bitset<MAX_WARP_SIZE> active_mask_t;
 typedef std::bitset<MAX_WARP_SIZE_SIMT_STACK> simt_mask_t;
 typedef std::vector<address_type> addr_vector_t;
 
+enum stack_entry_type {
+    STACK_ENTRY_TYPE_NORMAL = 0,
+    STACK_ENTRY_TYPE_CALL
+};
+
+struct simt_stack_entry {
+    address_type m_pc;
+    unsigned int m_calldepth;
+    simt_mask_t m_active_mask;
+    address_type m_recvg_pc;
+    unsigned long long m_branch_div_cycle;
+    stack_entry_type m_type;
+    simt_stack_entry() :
+        m_pc(-1), m_calldepth(0), m_active_mask(), m_recvg_pc(-1), m_branch_div_cycle(0), m_type(STACK_ENTRY_TYPE_NORMAL) { };
+ };
+
 class simt_stack {
 public:
     simt_stack( unsigned wid,  unsigned warpSize);
 
     void reset();
     void launch( address_type start_pc, const simt_mask_t &active_mask );
+    void launch_with_copy(std::deque<simt_stack_entry> stack);
     void update( simt_mask_t &thread_done, addr_vector_t &next_pc, address_type recvg_pc, op_type next_inst_op,unsigned next_inst_size, address_type next_inst_pc );
+
+    std::deque<simt_stack_entry> get_stack_entry();
 
     const simt_mask_t &get_active_mask() const;
     void     get_pdom_stack_top_info( unsigned *pc, unsigned *rpc ) const;
@@ -314,22 +333,6 @@ public:
 protected:
     unsigned m_warp_id;
     unsigned m_warp_size;
-
-    enum stack_entry_type {
-        STACK_ENTRY_TYPE_NORMAL = 0,
-        STACK_ENTRY_TYPE_CALL
-    };
-
-    struct simt_stack_entry {
-        address_type m_pc;
-        unsigned int m_calldepth;
-        simt_mask_t m_active_mask;
-        address_type m_recvg_pc;
-        unsigned long long m_branch_div_cycle;
-        stack_entry_type m_type;
-        simt_stack_entry() :
-            m_pc(-1), m_calldepth(0), m_active_mask(), m_recvg_pc(-1), m_branch_div_cycle(0), m_type(STACK_ENTRY_TYPE_NORMAL) { };
-    };
 
     std::deque<simt_stack_entry> m_stack;
 };//end of simt stack
@@ -834,6 +837,8 @@ public:
         m_last_st_latency = 0;
 
         dwf_flag = false;
+        resume_flag = false;
+        thread_ids.resize(MAX_WARP_SIZE,-1);
 
     }
     virtual ~warp_inst_t(){
@@ -847,7 +852,7 @@ public:
     {
         m_empty=true;
     }
-    void issue( const active_mask_t &mask, unsigned warp_id, unsigned long long cycle, int dynamic_warp_id, bool dwf_flag)
+    void issue( const active_mask_t &mask, unsigned warp_id, unsigned long long cycle, int dynamic_warp_id, bool dwf_flag, bool resume_flag, std::vector<unsigned> threads)
     {
         m_warp_active_mask = mask;
         m_warp_issued_mask = mask;
@@ -859,6 +864,8 @@ public:
         m_cache_hit=false;
         m_empty=false;
         if(dwf_flag) set_dwf_flag();
+        if(resume_flag) set_resume_flag();
+        thread_ids = threads;
         //printf("warp issue. warp_id:%u, uid:%u, pc:%u, cycle:%llu\n",warp_id,m_uid,pc,issue_cycle);
     }
     const active_mask_t&  get_active_mask() const
@@ -867,6 +874,10 @@ public:
     }
 
     active_mask_t get_active_mask() {return m_warp_active_mask;}
+    void set_active_mask(active_mask_t mask)
+    {
+        m_warp_active_mask=mask;
+    }
     void completed( unsigned long long cycle ) const;  // stat collection: called when the instruction is completed
 
     void set_addr( unsigned n, new_addr_type addr )
@@ -994,13 +1005,18 @@ public:
     unsigned get_uid() const { return m_uid; }
     active_mask_t get_mask() {return m_warp_issued_mask;}
     //set dwf thread, added by gh
-    void set_dwf_thread(std::vector<unsigned> thread_ids){
-        dwf_thread_id = thread_ids;
+    void set_thread_ids(std::vector<unsigned> thread_id){
+        //printf("set thread id\n");
+        thread_ids = thread_id;
     }
-    bool dwf_warp() {return dwf_flag;}
+    bool get_dwf_flag() {return dwf_flag;}
     void set_dwf_flag() {dwf_flag=true;}
     void clear_dwf_flag() {dwf_flag=false;}
-    unsigned get_thread_id(unsigned t) {return dwf_thread_id[t];}
+
+    bool get_resume_flag() {return resume_flag;}
+    void set_resume_flag() {resume_flag=true;}
+    void clear_resume_flag() {resume_flag=false;}
+    unsigned get_thread_id(unsigned t) {return thread_ids[t];}
 
 protected:
 
@@ -1041,8 +1057,9 @@ protected:
     static unsigned sm_next_uid;
 
     //thread id for dwf
-    std::vector<unsigned> dwf_thread_id;
+    std::vector<unsigned> thread_ids;
     bool dwf_flag;
+    bool resume_flag;
 };
 
 void move_warp( warp_inst_t *&dst, warp_inst_t *&src );

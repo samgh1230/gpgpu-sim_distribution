@@ -1192,10 +1192,22 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
 
    bool skip = false;
    int op_classification = 0;
+   //bool set_pc=false;
+   //if(inst.get_resume_flag()){
+       //m_PC=inst.pc;
+       //inst.clear_resume_flag();
+       //set_pc=true;
+   //}
    addr_t pc = next_instr();
-   assert( pc == inst.pc ); // make sure timing model and functional model are in sync
+
+
+
+   //assert( pc == inst.pc ); // make sure timing model and functional model are in sync
    const ptx_instruction *pI = m_func_info->get_instruction(pc);
    set_npc( pc + pI->inst_size() );
+   if(pc != inst.pc)
+       printf("sid:%d, wid:%d, tid:%d, pc:%x, inst.pc:%x.dwf_flag(%d)\n",m_hw_sid, m_hw_wid,m_hw_tid,pc,inst.pc,inst.get_dwf_flag());
+   assert( pc==inst.pc );
 
 
    try {
@@ -1227,7 +1239,6 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
             skip = !pred_lookup(pI->get_pred_mod(), pred_value.pred & 0x000F);
       }
    }
-
    if( skip ) {
       inst.set_not_active(lane_id);
    } else {
@@ -1246,12 +1257,10 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
       }
       delete pJ;
       pI = pI_saved;
-
       // Run exit instruction if exit option included
       if(pI->is_exit())
          exit_impl(pI,this);
    }
-
 
 
    const gpgpu_functional_sim_config &config = m_gpu->get_config();
@@ -1279,7 +1288,6 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
              m_last_set_operand_value.u64 );
       fflush(stdout);
    }
-
    addr_t insn_memaddr = 0xFEEBDAED;
    memory_space_t insn_space = undefined_space;
    _memory_op_t insn_memory_op = no_memory_op;
@@ -1316,7 +1324,6 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
       dump_modifiedregs(m_gpu->get_ptx_inst_debug_file());
       dump_regs(m_gpu->get_ptx_inst_debug_file());
    }
-
    if ( g_debug_execution >= 6 ) {
       if ( ptx_debug_exec_dump_cond<6>(get_uid(), pc) )
          dump_modifiedregs(stdout);
@@ -1420,6 +1427,10 @@ unsigned ptx_sim_init_thread( kernel_info_t &kernel,
 
    if ( *thread_info != NULL ) {
       ptx_thread_info *thd = *thread_info;
+      if(!thd->is_done()){
+          printf("tid:%d is not done before init\n",tid);
+          exit(1);
+      }
       assert( thd->is_done() );
       if ( g_debug_execution==-1 ) {
          dim3 ctaid = thd->get_ctaid();
