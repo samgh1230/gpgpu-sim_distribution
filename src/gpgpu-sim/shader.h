@@ -179,7 +179,7 @@ public:
     }
 
     void print_ibuffer(){
-        printf("print ibuffer\n");
+        //printf("print ibuffer\n");
         for(unsigned i=0;i<IBUFFER_SIZE;i++){
             if(m_ibuffer[i].m_valid){
                 warp_inst_t* inst = m_ibuffer[i].m_inst;
@@ -254,7 +254,7 @@ public:
 
         dwf_flag=false;
         swap_wait=true;
-
+        m_active_threads.reset();
         //m_imiss_pending=false;
         //n_completed = m_warp_size;
         //m_n_atomic=0;
@@ -2007,6 +2007,7 @@ public:
      unsigned get_dynamic_warp_id() {return m_dynamic_warp_id;}
      void inc_dynamic_warp_id() {m_dynamic_warp_id++;}
      thread_ctx_t get_thread_ctx(unsigned tid) {return m_threadState[tid];}
+     Scoreboard* get_scoreboard() {return m_scoreboard;}
 
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){

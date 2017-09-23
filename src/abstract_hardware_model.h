@@ -864,7 +864,7 @@ public:
         m_cache_hit=false;
         m_empty=false;
         if(dwf_flag) set_dwf_flag();
-        if(resume_flag) set_resume_flag();
+        //if(resume_flag) set_resume_flag();
         thread_ids = threads;
         //printf("warp issue. warp_id:%u, uid:%u, pc:%u, cycle:%llu\n",warp_id,m_uid,pc,issue_cycle);
     }

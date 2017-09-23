@@ -44,7 +44,9 @@ public:
 
     void reserveRegisters( warp_inst_t *inst);
     void releaseRegisters(warp_inst_t *inst);
+    void releaseRegisters(mem_fetch* mf);
     void releaseRegister(unsigned regnum,warp_inst_t* inst);
+    void releaseRegister(unsigned regnum, warp_inst_t* inst,mem_fetch* mf);
 
     bool checkCollision(warp_inst_t *inst,unsigned warp_id) ;
     //check load dependence, added by gh
