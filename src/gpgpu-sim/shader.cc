@@ -63,6 +63,13 @@ unsigned dwf_unit::find_free_hw_warp(unsigned cta_id)
             /*printf("wid:%d, cta_id:%d,%d\n",i,dwf2hw_warp[i]->cta_id,cta_id);*/
             return i;
         }
+        /*else if(!mapped_hw_warp.test(i)&&dwf2hw_warp[i]->cta_id==-1){*/
+            /*assert(dynamic_allocated_warp.find(i)==dynamic_allocated_warp.end());*/
+            /*dynamic_allocated_warp.insert(i);*/
+            /*dwf2hw_warp[i]->cta_id=cta_id;*/
+            /*m_shader->get_warp_by_index(i).set_cta_id(cta_id);*/
+            /*return i;*/
+        /*}*/
     }
     return -1;
 }
@@ -70,6 +77,12 @@ unsigned dwf_unit::find_free_hw_warp(unsigned cta_id)
 void dwf_unit::free_hw_warp(unsigned wid)
 {
     mapped_hw_warp.reset(wid);
+    std::set<unsigned>::iterator it=dynamic_allocated_warp.find(wid);
+    /*if(it!=dynamic_allocated_warp.end()){*/
+        /*dwf2hw_warp[wid]->cta_id=-1;*/
+        /*dynamic_allocated_warp.erase(wid);*/
+        /*m_shader->get_warp_by_index(wid).set_cta_id(-1);*/
+    /*}*/
     /*if(m_shader->get_sid()==1)*/
         /*printf("num_thread_in_pool:%d\n",num_thread_in_pool);*/
 }

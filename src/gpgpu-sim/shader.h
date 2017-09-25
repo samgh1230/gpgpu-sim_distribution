@@ -445,7 +445,7 @@ private:
     std::vector< std::vector<thread_t> >  thread_pool;
     class shader_core_ctx *m_shader;
 
-
+    std::set<unsigned> dynamic_allocated_warp;
 
 
     std::set<unsigned> threads;
