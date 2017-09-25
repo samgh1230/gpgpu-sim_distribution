@@ -1273,6 +1273,7 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
       }
     }
     assert( free_cta_hw_id!=(unsigned)-1 );
+    //printf("find free cta id:%d\n",free_cta_hw_id);
 
     // determine hardware threads and warps that will be used for this CTA
     int cta_size = kernel.threads_per_cta();
@@ -1285,7 +1286,7 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
       padded_cta_size = ((cta_size/m_config->warp_size)+1)*(m_config->warp_size);
     unsigned start_thread = free_cta_hw_id * padded_cta_size;
     unsigned end_thread  = start_thread +  cta_size;
-
+    //printf("init from %d to %d\n",start_thread,end_thread);
     // reset the microarchitecture state of the selected hardware thread and warp contexts
     reinit(start_thread, end_thread,false);
 
@@ -1302,6 +1303,7 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
         //keep thread id in shd_warp_t,added by gh
         m_warp[warp_id].add_thread(i,warp_id);
         m_dwf_unit->set_warp_active(warp_id);
+        m_dwf_unit->set_cta_id(warp_id,free_cta_hw_id);
     }
     //printf("active warp:%d\n",m_dwf_unit->get_active_warp());
     assert( nthreads_in_block > 0 && nthreads_in_block <= m_config->n_thread_per_shader); // should be at least one, but less than max
@@ -1312,7 +1314,7 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
     m_barriers.allocate_barrier(free_cta_hw_id,warps);
 
     // initialize the SIMT stacks and fetch hardware
-    printf("init warps.start thread:%d, end_thread:%d,ctaid:%d\n",start_thread,end_thread,free_cta_hw_id);
+    //printf("init warps.start thread:%d, end_thread:%d,ctaid:%d\n",start_thread,end_thread,free_cta_hw_id);
     init_warps( free_cta_hw_id, start_thread, end_thread);
     m_n_active_cta++;
 

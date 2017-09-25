@@ -85,6 +85,8 @@ public:
    unsigned n_l1_access_ac;
 
    bool m_active;
+   unsigned m_stores_outstanding;
+   unsigned m_inst_issued_in_pipeline;
 };
 struct mapped_warp{
         address_type start_pc;
@@ -221,6 +223,7 @@ public:
         assert( m_stores_outstanding > 0 );
         m_stores_outstanding--;
     }
+    unsigned get_store_outstanding() {return m_stores_outstanding;}
 
     unsigned num_inst_in_buffer() const
     {
@@ -234,12 +237,9 @@ public:
     unsigned num_inst_in_pipeline() const { return m_inst_in_pipeline;}
     unsigned num_issued_inst_in_pipeline() const {return (num_inst_in_pipeline()-num_inst_in_buffer());}
     bool inst_in_pipeline() const { return m_inst_in_pipeline > 0; }
-    void inc_inst_in_pipeline() { m_inst_in_pipeline++; }
-    void dec_inst_in_pipeline()
-    {
-        assert( m_inst_in_pipeline > 0 );
-        m_inst_in_pipeline--;
-    }
+    void inc_inst_in_pipeline();
+    void dec_inst_in_pipeline();
+
 
     unsigned get_cta_id() const { return m_cta_id; }
 
@@ -341,7 +341,8 @@ private:
 };
 
 //class for dynamic warp formation unit,added by gh
-#define MAX_WARPS_PER_SM MAX_THREAD_PER_SM/MAX_WARP_SIZE
+//#define MAX_WARPS_PER_SM MAX_THREAD_PER_SM/MAX_WARP_SIZE
+#define MAX_WARPS_PER_SM 48
 #define DW_ISSUE_THRESHOLD  10
 
 
@@ -374,6 +375,7 @@ public:
         this->m_shader = m_shader;
         for(unsigned int i=0; i<MAX_WARPS_PER_SM; i++){
             mapped_warp* warp_ptr = new mapped_warp;
+            warp_ptr->cta_id = -1;
             dwf2hw_warp.push_back(warp_ptr);
         }
         mapped_hw_warp.reset();//is not right when not all warp are assigned
@@ -400,7 +402,7 @@ public:
 
     void set_warp_active(unsigned wid);
     unsigned get_active_warp(){return mapped_hw_warp.count();}
-    unsigned find_free_hw_warp();
+    unsigned find_free_hw_warp(unsigned ctaid);
 
     void free_hw_warp(unsigned wid);
 
@@ -426,6 +428,10 @@ public:
 
     void enqueue_and_update_unmapped();
     std::vector<unsigned> get_dwf_thread(unsigned warp_id);
+
+    void set_cta_id(unsigned wid, unsigned ctaid){
+        dwf2hw_warp[wid]->cta_id= ctaid;
+    }
     unsigned num_thread_in_pool;
 private:
     std::bitset<MAX_WARPS_PER_SM> mapped_hw_warp;
@@ -1876,6 +1882,29 @@ public:
     void set_max_cta( const kernel_info_t &kernel );
     void warp_inst_complete( warp_inst_t &inst);
 
+    void dec_inst_issued_in_pipeline(warp_inst_t* inst){
+         for(unsigned i=0;i<MAX_WARP_SIZE;i++){
+                active_mask_t active_lanes = inst->get_active_mask();
+                if(active_lanes.test(i)){
+                    unsigned tid=inst->get_thread_id(i);
+                    assert(m_threadState[tid].m_inst_issued_in_pipeline>0);
+                    m_threadState[tid].m_inst_issued_in_pipeline--;
+                    //printf("dec.thread:%d has %d inst in pipeline\n",tid,m_threadState[tid].m_inst_issued_in_pipeline);
+                }
+           }
+    }
+    void inc_inst_issued_in_pipeline(warp_inst_t* inst){
+         for(unsigned i=0;i<MAX_WARP_SIZE;i++){
+             active_mask_t active_lanes = inst->get_active_mask();
+                //printf("active_mask:%d\n",active_lanes.to_ulong());
+                if(active_lanes.test(i)){
+                    unsigned tid=inst->get_thread_id(i);
+                    m_threadState[tid].m_inst_issued_in_pipeline++;
+                    //printf("inc.thread:%d has %d inst in pipeline\n",tid,m_threadState[tid].m_inst_issued_in_pipeline);
+                }
+           }
+    }
+
     // accessors
     std::list<unsigned> get_regs_written( const inst_t &fvt ) const;
     const shader_core_config *get_config() const { return m_config; }
@@ -2008,6 +2037,7 @@ public:
      void inc_dynamic_warp_id() {m_dynamic_warp_id++;}
      thread_ctx_t get_thread_ctx(unsigned tid) {return m_threadState[tid];}
      Scoreboard* get_scoreboard() {return m_scoreboard;}
+     thread_ctx_t* get_thread_state(unsigned i) {return &m_threadState[i];}
 
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){

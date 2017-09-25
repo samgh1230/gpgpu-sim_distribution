@@ -603,6 +603,7 @@ void simt_stack::launch( address_type start_pc, const simt_mask_t &active_mask )
     new_stack_entry.m_active_mask = active_mask;
     new_stack_entry.m_type = STACK_ENTRY_TYPE_NORMAL;
     m_stack.push_back(new_stack_entry);
+    //print(stdout);
 }
 
 void simt_stack::launch_with_copy(std::deque<simt_stack_entry> stack)
@@ -863,6 +864,9 @@ void core_t::updateSIMTStack(unsigned warpId, warp_inst_t * inst)
         }
     }
     m_simt_stack[warpId]->update(thread_done,next_pc,inst->reconvergence_pc, inst->op,inst->isize,inst->pc);
+    //if(m_sid==6)
+        //m_simt_stack[warpId].print(stdout);
+    //fflush(stdout);
 }
 
 //! Get the warp to be executed using the data taken form the SIMT stack

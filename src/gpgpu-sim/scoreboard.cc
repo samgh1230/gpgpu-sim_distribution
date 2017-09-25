@@ -73,17 +73,16 @@ void Scoreboard::reserveRegister(unsigned regnum, class warp_inst_t* inst)
 {
     active_mask_t active_mask = inst->get_active_mask();
     int index;
-    if(regnum==18)
     SHADER_DPRINTF( SCOREBOARD, "Reserved Register - sid:%d, reg:%d\n ",m_sid, regnum );
     for(index=0;index<MAX_WARP_SIZE;index++){
         if(active_mask[index]){
             unsigned tid = inst->get_thread_id(index);
             unsigned wid = tid/MAX_WARP_SIZE;
             unsigned lane = tid%MAX_WARP_SIZE;
-            if(reg_table[wid][regnum].test(lane)){
-                printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d, tid:%d, %s\n).", m_sid, wid, regnum, tid,ptx_get_insn_str(inst->pc).c_str());
-                abort();
-            }
+            /*if(reg_table[wid][regnum].test(lane)){*/
+                /*printf("Error: trying to reserve an already reserved register (sid=%d, wid=%d, regnum=%d, tid:%d, %s\n).", m_sid, wid, regnum, tid,ptx_get_insn_str(inst->pc).c_str());*/
+                /*abort();*/
+            /*}*/
             reg_table[wid][regnum].set(lane);
             SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n",  wid, tid,active_mask.count(),ptx_get_insn_str(inst->pc).c_str());
         }
@@ -103,8 +102,8 @@ void Scoreboard::reserveLopRegister(unsigned regnum, class warp_inst_t* inst)
                 printf("Error: trying to reserve an already reserved long op register (sid=%d, wid=%d,tid:%d, regnum=%d, %s\n).", m_sid, wid,tid, regnum, ptx_get_insn_str(inst->pc).c_str());
                 abort();
             }
-            if(m_sid==6&&tid==376&&regnum==18)
-                printf("tid:%d reserves reg 18.inst:%s\n",tid,ptx_get_insn_str(inst->pc).c_str());
+            /*if(m_sid==6&&tid==376)*/
+                /*printf("tid:%d reserves reg %d.inst:%s\n",tid,regnum,ptx_get_insn_str(inst->pc).c_str());*/
             longopregs[wid][regnum].set(lane);
         }
     }
@@ -114,8 +113,8 @@ void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst)
 {
     SHADER_DPRINTF( SCOREBOARD, "Release Register - sid:%d, reg:%d\n", m_sid, regnum );
     active_mask_t active_mask = inst->get_active_mask();
-    if(regnum==18&&m_sid==6&&inst->warp_id()==0)
-        printf("active_mask:%x\n",active_mask.to_ulong());
+    /*if(regnum==18&&m_sid==6&&inst->warp_id()==0)*/
+        /*printf("active_mask:%x\n",active_mask.to_ulong());*/
     int i;
     for(i=0;i<MAX_WARP_SIZE;i++){
         if(active_mask[i]){
@@ -125,9 +124,9 @@ void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst)
             reg_table[wid][regnum].reset(lane);
             longopregs[wid][regnum].reset(lane);
             SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n", wid, tid, active_mask.count(),ptx_get_insn_str( inst->pc).c_str());
-            if(inst->is_load()&&m_sid==6&&tid==376)
-            printf( "Register Released - tid:%d, reg: %d\n",
-                            tid, regnum);
+            /*if(inst->is_load()&&m_sid==6&&tid==376)*/
+            /*printf( "inst. Register Released - tid:%d, reg: %d.%s\n",*/
+                            /*tid, regnum,ptx_get_insn_str(inst->pc).c_str());*/
         }
     }
 }
@@ -144,9 +143,9 @@ void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst,mem_fetch* m
             reg_table[wid][regnum].reset(lane);
             longopregs[wid][regnum].reset(lane);
             SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n", wid, tid, active_mask.count(),ptx_get_insn_str( inst->pc).c_str());
-            if(inst->is_load()&&m_sid==6&&tid==376)
-            printf( "Register Released - tid:%d, reg: %d\n",
-                            tid, regnum);
+            /*if(inst->is_load()&&m_sid==6&&tid==376)*/
+            /*printf( "mf.Register Released - tid:%d, reg: %d.%s\n",*/
+                            /*tid, regnum,ptx_get_insn_str(inst->pc).c_str());*/
         }
     }
 }
@@ -330,7 +329,6 @@ bool Scoreboard::checkCollisionLD(class warp_inst_t *inst, unsigned warp_id) {
                         }
                     }
                     /*printf("2\n");*/
-                    /*if(active_mask.test(j))*/
 
                     if(tid!=-1&&!stack_entry.empty()){
                         unsigned cta_id=m_shader->get_thread_ctx(tid).m_cta_id;
