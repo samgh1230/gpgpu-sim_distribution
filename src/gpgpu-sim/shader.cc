@@ -104,6 +104,7 @@ void dwf_unit::add_thread2pool ( warp_inst_t* inst, unsigned tid,std::set<unsign
     thread_pool[wid][lane].ready2issue=false;
     thread_pool[wid][lane].stack_entry=stack;
     thread_pool[wid][lane].cta_id=cta_id;
+    thread_pool[wid][lane].timestamp_in_pool=gpu_sim_cycle;
     num_thread_in_pool++;
 
     /*if(m_shader->get_sid()==6&&tid==376){*/
@@ -247,6 +248,7 @@ void dwf_unit::add_thread2unmapped(unmapped_warp* um, unsigned tid, unsigned cta
 {
     unsigned lane = tid%MAX_WARP_SIZE;
     unsigned wid = tid/MAX_WARP_SIZE;
+    unsigned avg_wait_time=um->thd_avg_waiting_time*um->active_lanes.count();
     um->thread_ids[lane]=tid;
     um->active_lanes.set(lane);
     /*um->cta_id = cta_id;*/
@@ -259,6 +261,9 @@ void dwf_unit::add_thread2unmapped(unmapped_warp* um, unsigned tid, unsigned cta
 
         it->m_active_mask |= it2->m_active_mask;
     }
+
+    avg_wait_time = (avg_wait_time-thread_pool[wid][lane].timestamp_in_pool+gpu_sim_cycle)/um->active_lanes.count();
+    um->thd_avg_waiting_time=avg_wait_time;
     thread_pool[wid][lane].ready2issue=false;
     thread_pool[wid][lane].pc=0;
     assert(thread_pool[wid][lane].regs.empty());
@@ -285,6 +290,7 @@ void dwf_unit::form_new_warp(unsigned tid, address_type pc, unsigned cta_id)
     um->cycles_wait2issue = 0;
     um->stack_entry  = thread_pool[wid][lane].stack_entry;
     um->cta_id = cta_id;
+    um->thd_avg_waiting_time=gpu_sim_cycle-thread_pool[wid][lane].timestamp_in_pool;
     unmapped_warps[um->pc].push_back(um);
 
     thread_pool[wid][lane].ready2issue=false;
@@ -330,7 +336,19 @@ bool dwf_unit::has_free_hw_warp()
 void dwf_unit::enqueue_and_update_unmapped()
 {
     std::map<address_type, std::list<unmapped_warp*> > :: iterator iter;
-    for(iter=unmapped_warps.begin();iter!=unmapped_warps.end();iter++){
+    if(last_enq_pc==-1){
+        iter=unmapped_warps.begin();
+        /*last_iter=unmapped_warps.end();*/
+    }
+    else {
+        iter=unmapped_warps.find(last_enq_pc);
+        /*last_iter=iter;*/
+        iter++;
+    }
+    unsigned count=0;
+    for(;count<unmapped_warps.size();iter++,count++){
+        if(iter==unmapped_warps.end())
+            iter=unmapped_warps.begin();
         std::list<unmapped_warp*>::iterator it = iter->second.begin();
         for(;it!=iter->second.end();){
             bool ready = is_ready2issue(*it);
@@ -339,12 +357,45 @@ void dwf_unit::enqueue_and_update_unmapped()
             if (ready)  {
                 ready_unmapped_warps.push(*it);
                 it=iter->second.erase(it);
+                last_enq_pc=iter->first;
                 /*std::cout<<"enqueue ready warps.";*/
                 /*std::cin.get();*/
             }
             else{
                 (*it)->cycles_wait2issue ++;
+                (*it)->thd_avg_waiting_time++;
                 it++;
+            }
+        }
+    }
+    //keep core busy
+    if(ready_unmapped_warps.empty()&&mapped_hw_warp.count()==0&&unmapped_warps.size()>0)
+    {
+        unsigned issued=0;
+        if(last_enq_pc==-1){
+            iter=unmapped_warps.begin();
+            /*last_iter=unmapped_warps.end();*/
+        }
+        else {
+            iter=unmapped_warps.find(last_enq_pc);
+            /*last_iter=iter;*/
+            iter++;
+        }
+        count=0;
+        /*iter=unmapped_warps.find(last_enq_pc);*/
+        /*last_iter=iter;*/
+        /*iter++;*/
+        for(;count<unmapped_warps.size()&&issued<mapped_hw_warp.size();iter++,count++){
+            if(iter==unmapped_warps.end())
+                iter=unmapped_warps.begin();
+            std::list<unmapped_warp*>::iterator it = iter->second.begin();
+            for(;it!=iter->second.end();){
+                if(issued<mapped_hw_warp.size()){
+                   ready_unmapped_warps.push(*it);
+                   it=iter->second.erase(it);
+                   issued++;
+                   last_enq_pc=iter->first;
+                }
             }
         }
     }
@@ -358,9 +409,10 @@ std::vector<unsigned> dwf_unit::get_dwf_thread(unsigned warp_id)
 void dwf_unit::cycle()
 {
    //To do: if mapped_hw_warp has free entries, pop the head of queue if it's not empty
-   if(has_free_hw_warp() && !ready_unmapped_warps.empty())
+   //multiple issue
+   while(has_free_hw_warp() && !ready_unmapped_warps.empty())
    {
-        unmapped_warp* uw = ready_unmapped_warps.front();
+        unmapped_warp* uw = ready_unmapped_warps.top();
         unsigned idx = find_free_hw_warp(uw->cta_id);
         if(idx!=-1)  {
             map_warp2ibuf(uw, idx);
@@ -394,6 +446,8 @@ void dwf_unit::cycle()
             delete(uw);
             ready_unmapped_warps.pop();
         }
+        else if(idx==-1)
+            break;
    }
    //To do: increase waiting cycle for exist warp,
    //find ready warp in unmapped_warps
@@ -459,6 +513,10 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
         m_threadState[i].m_active = false;
         m_threadState[i].m_stores_outstanding = 0;
         m_threadState[i].m_inst_issued_in_pipeline=0;
+        m_threadState[i].start_cycle=0;
+        m_threadState[i].end_cycle=0;
+        m_threadState[i].acc_dep_wait_cycle=0;
+        m_threadState[i].wait_for_load_at=0;
     }
     // m_icnt = new shader_memory_interface(this,cluster);
     if ( m_config->gpgpu_perfect_mem ) {
@@ -662,6 +720,10 @@ void shader_core_ctx::reinit(unsigned start_thread, unsigned end_thread, bool re
    if( reset_not_completed ) {
        m_not_completed = 0;
        m_active_threads.reset();
+
+       cycles2run_threads.clear();
+       start_cycle=-1;
+       finished_thread_count=0;
    }
    for (unsigned i = start_thread; i<end_thread; i++) {
       m_threadState[i].n_insn = 0;
@@ -676,6 +738,8 @@ void shader_core_ctx::reinit(unsigned start_thread, unsigned end_thread, bool re
 void shader_core_ctx::init_warps( unsigned cta_id, unsigned start_thread, unsigned end_thread )
 {
     address_type start_pc = next_pc(start_thread);
+
+    start_cycle=gpu_sim_cycle;
     if (m_config->model == POST_DOMINATOR) {
         unsigned start_warp = start_thread / m_config->warp_size;
         unsigned end_warp = end_thread / m_config->warp_size + ((end_thread % m_config->warp_size)? 1 : 0);
@@ -825,7 +889,19 @@ void shader_core_stats::print( FILE* fout ) const
    m_outgoing_traffic_stats->print(fout);
    m_incoming_traffic_stats->print(fout);
 }
+void shader_core_stats::print_stall_distro(FILE* fout)
+{
+   fprintf(fout, "Warp Occupancy Distribution:\n");
+   fprintf(fout, "Stall:%d\t", shader_cycle_distro[2]);
+   fprintf(fout, "W0_Idle:%d\t", shader_cycle_distro[0]);
+   fprintf(fout, "W0_Scoreboard:%d", shader_cycle_distro[1]);
+   //print out load dependence, added by gh
+   fprintf(fout, "\tload dependence:%d",shader_cycle_distro[3]);
 
+   for (unsigned i = 4; i < m_config->warp_size + 4; i++)
+      fprintf(fout, "\tW%d:%d", i-3, shader_cycle_distro[i]);
+   fprintf(fout, "\n");
+}
 void shader_core_stats::event_warp_issued( unsigned s_id, unsigned warp_id, unsigned num_issued, unsigned dynamic_warp_id ) {
     assert( warp_id <= m_config->max_warps_per_shader );
     for ( unsigned i = 0; i < num_issued; ++i ) {
@@ -1008,12 +1084,20 @@ void shader_core_ctx::fetch()
                                     break;
                                 }
                                 m_threadState[tid].m_active = false;
+                                m_threadState[tid].end_cycle=gpu_sim_cycle;
                                 unsigned cta_id = m_warp[warp_id].get_cta_id();
+                                finished_thread_count++;
+                                if(finished_thread_count==100){
+                                    finished_thread_count=0;
+                                    cycles2run_threads.push_back(gpu_sim_cycle-start_cycle);
+                                    start_cycle=gpu_sim_cycle;
+                                }
                                 /*printf("cta_id:%d\n",cta_id);*/
                                 register_cta_thread_exit(cta_id);
                                 /*printf("thread %d exit. %d not completed\n",tid,m_cta_status[cta_id]);*/
                                 m_not_completed -= 1;
                                 m_active_threads.reset(tid);
+
                                 assert( m_thread[tid]!= NULL );
                                 did_exit=true;
                             }
@@ -1175,6 +1259,7 @@ void shader_core_ctx::issue(){
     }
     /*printf("2\n");*/
     //added by gh
+    if(m_config->gpgpu_dwf_enable)
     m_dwf_unit->cycle();
     /*printf("3\n");*/
 }
@@ -1307,6 +1392,7 @@ void scheduler_unit::cycle()
                            /*ptx_get_insn_str( pc).c_str() );*/
             if( pI ) {
                 assert(valid);
+                const active_mask_t &active_mask = m_simt_stack[warp_id]->get_active_mask();
                 if( pc != pI->pc ) {
                     /*SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) control hazard instruction flush\n",*/
                                    /*(*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id() );*/
@@ -1321,8 +1407,18 @@ void scheduler_unit::cycle()
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u, %s) passes scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), ptx_get_insn_str( pc).c_str());
                         ready_inst = true;
-                        const active_mask_t &active_mask = m_simt_stack[warp_id]->get_active_mask();
+
                         assert( warp(warp_id).inst_in_pipeline() );
+
+                        for(unsigned i=0;i<MAX_WARP_SIZE;i++){
+                            if(active_mask.test(i)){
+                                unsigned tid=warp(warp_id).get_thread_ids()[i];
+                                if(m_shader->get_thread_state(tid)->wait_for_load_at){
+                                    m_shader->get_thread_state(tid)->acc_dep_wait_cycle += gpu_sim_cycle - m_shader->get_thread_state(tid)->wait_for_load_at;
+                                    m_shader->get_thread_state(tid)->wait_for_load_at=0;
+                                }
+                            }
+                        }
 
                         if ( (pI->op == LOAD_OP) || (pI->op == STORE_OP) || (pI->op == MEMORY_BARRIER_OP) ) {
                             /*printf("inst %s ",ptx_get_insn_str(pI->pc).c_str());*/
@@ -1361,24 +1457,21 @@ void scheduler_unit::cycle()
                             //add inst depended on ld to thread pool,added by gh
                             /*if(m_shader->get_sid()==1&&warp_id==0)*/
                                 /*printf("add thread.inst:%s, pc:%x\n",ptx_get_insn_str(pc).c_str(),pc);*/
-                            warp(warp_id).release_warp();
-                            /*if(m_shader->get_sid()==1&&warp_id==0)*/
-                            /*warp(warp_id).print_ibuffer();*/
-                            unsigned cta_id = warp(warp_id).get_cta_id();
-                            m_shader->get_barrier().deactive_warp_set(cta_id,warp_id);
-                            /*if(m_shader->get_sid()==1)*/
-                                /*printf("add thread.inst %s\n",ptx_get_insn_str(pI->pc).c_str());*/
-                            /*SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) fails scoreboard and waiting for long op\n",*/
-                                    /*(*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id() );*/
-
-                            m_shader->get_dwf_unit()->free_hw_warp(warp_id);
-                            /*if(m_shader->get_sid()==1){*/
-                                /*printf("release hw_warp:%d, %d threads in the pool\n",warp_id,m_shader->get_dwf_unit()->num_thread_in_pool);*/
-                                /*std::cin.get();*/
-                            /*}*/
+                            if(m_shader->get_config()->gpgpu_dwf_enable){
+                                warp(warp_id).release_warp();
+                                unsigned cta_id = warp(warp_id).get_cta_id();
+                                m_shader->get_barrier().deactive_warp_set(cta_id,warp_id);
+                                m_shader->get_dwf_unit()->free_hw_warp(warp_id);
+                            }
+                            for(unsigned i=0;i<MAX_WARP_SIZE;i++){
+                                if(active_mask.test(i)){
+                                    unsigned tid=warp(warp_id).get_thread_ids()[i];
+                                    if(!m_shader->get_thread_state(tid)->wait_for_load_at)
+                                        m_shader->get_thread_state(tid)->wait_for_load_at=gpu_sim_cycle;
+                                }
+                            }
                         }
                         else{
-
                             lddep_inst = false;
                         }
                         /*SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) fails scoreboard\n",*/
@@ -1748,18 +1841,22 @@ void shader_core_ctx::warp_inst_complete( warp_inst_t &inst)
 	  m_stats->m_num_sim_insn[m_sid] += inst.active_count();
 
   m_stats->m_num_sim_winsn[m_sid]++;
+  m_stats->warp_inst_exec++;
   m_gpu->gpu_sim_insn += inst.active_count();
   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
 
   //if memory op, set last latency, added by gh
-   if(inst.is_load()||inst.is_store())
+   if(inst.is_load())
        inst.set_last_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());
 
   //collect latency, added by gh
   if ((inst.is_load()) && (inst.space.get_type() == local_space || inst.space.get_type() == global_space)) {
-      m_stats->m_num_warp_memory_access ++;
-      if (inst.get_num_access() > 1)
-          m_stats->m_num_uncoalesced_load ++;
+      m_stats->m_num_warp_memory_access++;
+      m_stats->warp_load_exec++;
+      if (inst.get_num_access() > 1){
+          m_stats->num_gather_accesses += inst.get_num_access();
+          m_stats->warp_gather_load_exec++;
+      }
       m_stats->m_average_coalesced_access_per_load += inst.get_num_access();
       m_stats->m_average_first_latency += inst.get_first_latency();
       m_stats->m_average_last_latency += inst.get_last_latency();
@@ -2614,6 +2711,9 @@ void shader_core_ctx::register_cta_thread_exit( unsigned cta_num )
           m_kernel->dec_running();
           printf("GPGPU-Sim uArch: Shader %u empty (release kernel %u \'%s\').\n", m_sid, m_kernel->get_uid(),
                  m_kernel->name().c_str() );
+          cycles2run_threads.push_back(gpu_sim_cycle-start_cycle);
+          finished_thread_count=0;
+          start_cycle=-1;
           if( m_kernel->no_more_ctas_to_run() ) {
               if( !m_kernel->running() ) {
                   printf("GPGPU-Sim uArch: GPU detected kernel \'%s\' finished on shader %u.\n", m_kernel->name().c_str(), m_sid );

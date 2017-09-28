@@ -87,6 +87,12 @@ public:
    bool m_active;
    unsigned m_stores_outstanding;
    unsigned m_inst_issued_in_pipeline;
+
+   unsigned long long start_cycle;
+   unsigned long long end_cycle;
+   unsigned long long acc_dep_wait_cycle;
+   unsigned long long wait_for_load_at;
+
 };
 struct mapped_warp{
         address_type start_pc;
@@ -354,6 +360,12 @@ struct unmapped_warp{
         address_type pc;
         std::deque<simt_stack_entry> stack_entry;
         unsigned cta_id;
+        unsigned thd_avg_waiting_time;
+
+        bool operator < (const unmapped_warp &a) const
+        {
+            return a.thd_avg_waiting_time<thd_avg_waiting_time;
+        }
 };
 
 struct thread_t{
@@ -363,6 +375,7 @@ struct thread_t{
         bool ready2issue;
         std::deque<simt_stack_entry> stack_entry;
         unsigned cta_id;
+        unsigned long long timestamp_in_pool;
         //warp_inst_t* dep_inst;
         //unsigned remain_active;
         //std::vector<unsigned> thread_ids;
@@ -391,6 +404,7 @@ public:
             }
         }
         num_thread_in_pool=0;
+        last_enq_pc=-1;
     }
 
 
@@ -439,13 +453,16 @@ private:
     std::vector<mapped_warp*> dwf2hw_warp;
 
     std::map<address_type, std::list<unmapped_warp*> >unmapped_warps;
-    std::queue<unmapped_warp*> ready_unmapped_warps;
+    //std::queue<unmapped_warp*> ready_unmapped_warps;
+    std::priority_queue<unmapped_warp*> ready_unmapped_warps;
 
     //std::map<unsigned, std::list<threads> > thread_pool;
     std::vector< std::vector<thread_t> >  thread_pool;
     class shader_core_ctx *m_shader;
 
     std::set<unsigned> dynamic_allocated_warp;
+
+    address_type last_enq_pc;
 
 
     std::set<unsigned> threads;
@@ -1493,6 +1510,8 @@ struct shader_core_config : public core_config
 
     bool gmem_skip_L1D; // on = global memory access always skip the L1 cache
 
+    bool gpgpu_dwf_enable;//enable dwf function
+
     bool gpgpu_dwf_reg_bankconflict;
 
     int gpgpu_num_sched_per_core;
@@ -1621,6 +1640,10 @@ struct shader_core_stats_pod {
     unsigned m_average_coalesced_access_per_load;
     unsigned long long m_average_first_latency, m_average_last_latency;
     unsigned long long m_max_first_latency, m_max_last_latency;
+
+    unsigned warp_inst_exec, warp_load_exec, warp_gather_load_exec;
+    unsigned num_gather_accesses;
+    std::vector<unsigned> distance_ld_ld, distance_ld_gather_ld, distance_gather_ld_ld;
 };
 
 class shader_core_stats : public shader_core_stats_pod {
@@ -1690,6 +1713,14 @@ public:
         m_average_last_latency = 0;
         m_max_first_latency = 0;
         m_max_last_latency = 0;
+
+        warp_inst_exec=0;
+        warp_load_exec=0;
+        warp_gather_load_exec=0;
+        num_gather_accesses=0;
+        distance_ld_ld.clear();
+        distance_gather_ld_ld.clear();
+        distance_ld_gather_ld.clear();
     }
 
     ~shader_core_stats()
@@ -1712,6 +1743,7 @@ public:
     void visualizer_print( gzFile visualizer_file );
 
     void print( FILE *fout ) const;
+    void print_stall_distro(FILE* fout);
 
     const std::vector< std::vector<unsigned> >& get_dynamic_warp_issue() const
     {
@@ -2039,6 +2071,13 @@ public:
      Scoreboard* get_scoreboard() {return m_scoreboard;}
      thread_ctx_t* get_thread_state(unsigned i) {return &m_threadState[i];}
 
+     void print_cycles_run_threads(FILE* fout)
+     {
+         for(unsigned i=0;i<cycles2run_threads.size();i++)
+            fprintf(fout,"%d\t",cycles2run_threads[i]);
+         fprintf(fout,"\n");
+     }
+
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
       return  ( ((32-active_count)>>1)*latency) + ( ((32-active_count)>>3)*latency) + ( ((32-active_count)>>3)*latency);
@@ -2137,6 +2176,9 @@ private:
     unsigned m_dynamic_warp_id;
 
     std::set<unsigned> threads_exit;
+    std::vector<unsigned> cycles2run_threads;
+    unsigned long long start_cycle;
+    unsigned finished_thread_count;
 
 };
 
@@ -2184,6 +2226,13 @@ public:
     void get_L1T_sub_stats(struct cache_sub_stats &css) const;
 
     void get_icnt_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
+    shader_core_ctx* get_core(unsigned i){
+        return m_core[i];
+    }
+
+    const shader_core_config* get_config(){
+        return m_config;
+    }
 
 private:
     unsigned m_cluster_id;

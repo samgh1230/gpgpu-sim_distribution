@@ -40,6 +40,7 @@ Scoreboard::Scoreboard( unsigned sid, unsigned n_warps, shader_core_ctx* shader 
 	//Initialize size of table
 	reg_table.resize(n_warps);
 	longopregs.resize(n_warps);
+    pending_write_per_thread.resize(shader->get_config()->n_thread_per_shader,0);
     unsigned i;
     for(i=0;i<n_warps;i++){
         reg_table[i].resize(NUM_REG);
@@ -84,6 +85,9 @@ void Scoreboard::reserveRegister(unsigned regnum, class warp_inst_t* inst)
                 /*abort();*/
             /*}*/
             reg_table[wid][regnum].set(lane);
+            /*if(tid==32&&m_shader->get_sid()==4)*/
+            /*printf("reserve register.sid:%d, tid:%d, reg:%d, inst:%s\n",m_shader->get_sid(),tid,regnum,ptx_get_insn_str(inst->pc).c_str());*/
+            pending_write_per_thread[tid]++;
             SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n",  wid, tid,active_mask.count(),ptx_get_insn_str(inst->pc).c_str());
         }
     }
@@ -121,8 +125,15 @@ void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst)
             unsigned tid = inst->get_thread_id(i);
             unsigned wid = tid/MAX_WARP_SIZE;
             unsigned lane = tid%MAX_WARP_SIZE;
+            if(reg_table[wid][regnum].test(lane)){
+                assert(pending_write_per_thread[tid]>0);
+                pending_write_per_thread[tid]--;
+            }
             reg_table[wid][regnum].reset(lane);
             longopregs[wid][regnum].reset(lane);
+            /*if(tid==32&&m_shader->get_sid()==4)*/
+            /*printf("release register.sid:%d,tid:%d, reg:%d, inst:%s\n",m_shader->get_sid(),tid,regnum,ptx_get_insn_str(inst->pc).c_str());*/
+
             SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n", wid, tid, active_mask.count(),ptx_get_insn_str( inst->pc).c_str());
             /*if(inst->is_load()&&m_sid==6&&tid==376)*/
             /*printf( "inst. Register Released - tid:%d, reg: %d.%s\n",*/
@@ -140,8 +151,16 @@ void Scoreboard::releaseRegister(unsigned regnum, warp_inst_t* inst,mem_fetch* m
             unsigned tid = inst->get_thread_id(i);
             unsigned wid = tid/MAX_WARP_SIZE;
             unsigned lane = tid%MAX_WARP_SIZE;
+            if(reg_table[wid][regnum].test(lane)){
+                assert(pending_write_per_thread[tid]>0);
+                pending_write_per_thread[tid]--;
+            }
             reg_table[wid][regnum].reset(lane);
             longopregs[wid][regnum].reset(lane);
+            /*if(tid==32&&m_shader->get_sid()==4)*/
+            /*printf("release register.sid:%d, tid:%d, reg:%d, inst:%s\n",m_shader->get_sid(),tid,regnum,ptx_get_insn_str(inst->pc).c_str());*/
+            /*assert(pending_write_per_thread[tid]>0);*/
+            /*pending_write_per_thread[tid]--;*/
             SHADER_DPRINTF( SCOREBOARD, "warp:%d, tid:%d, active_count:%d.(%s)\n", wid, tid, active_mask.count(),ptx_get_insn_str( inst->pc).c_str());
             /*if(inst->is_load()&&m_sid==6&&tid==376)*/
             /*printf( "mf.Register Released - tid:%d, reg: %d.%s\n",*/
@@ -175,20 +194,32 @@ void Scoreboard::reserveRegisters(class warp_inst_t* inst)
     }
 
     //Keep track of long operations
-    if (inst->is_load() &&
-    		(	inst->space.get_type() == global_space ||
-    			inst->space.get_type() == local_space ||
-                inst->space.get_type() == param_space_kernel ||
-                inst->space.get_type() == param_space_local ||
-                inst->space.get_type() == param_space_unclassified ||
-                inst->space.get_type() == tex_space) ){
-    	for ( unsigned r=0; r<4; r++) {
-    		if(inst->out[r] > 0) {
+    if (inst->is_load() && inst->get_num_access()>1 &&
+            (	inst->space.get_type() == global_space ||
+                inst->space.get_type() == local_space )){
+                /*inst->space.get_type() == param_space_unclassifiedkernel ||*/
+                /*inst->space.get_type() == param_space_local ||*/
+                /*inst->space.get_type() == param_space_unclassified ||*/
+                /*inst->space.get_type() == tex_space) ){*/
+    /*if(inst->is_load() &&*/
+        /*(inst->space.get_type()==global_space ||*/
+         /*inst->space.get_type()==local_space)){*/
+        for ( unsigned r=0; r<4; r++) {
+            if(inst->out[r] > 0) {
                 reserveLopRegister(inst->out[r],inst);
             }
-    	}
+        }
     }
 }
+
+/*void Scoreboard::reserveLopRegiters(warp_inst_t* inst)*/
+/*{*/
+    /*for(unsigned r=0; r<4; r++){*/
+        /*if(inst->out[r]>0){*/
+            /*reserveLopRegister(inst->out[r], inst);*/
+        /*}*/
+    /*}*/
+/*}*/
 
 // Release registers for an instruction
 void Scoreboard::releaseRegisters(class warp_inst_t *inst)
@@ -303,6 +334,8 @@ bool Scoreboard::checkCollisionLD(class warp_inst_t *inst, unsigned warp_id) {
                 }
             }
             if(collision){
+                if(!m_shader->get_config()->gpgpu_dwf_enable)
+                    return collision;
                 /*if(m_shader->get_sid()==12)*/
                     /*m_shader->get_simt_stack(warp_id)->print(stdout);*/
                 for(unsigned j=0;j<MAX_WARP_SIZE;j++){
@@ -329,7 +362,6 @@ bool Scoreboard::checkCollisionLD(class warp_inst_t *inst, unsigned warp_id) {
                         }
                     }
                     /*printf("2\n");*/
-
                     if(tid!=-1&&!stack_entry.empty()){
                         unsigned cta_id=m_shader->get_thread_ctx(tid).m_cta_id;
                         /*if(m_shader->get_sid()==4)*/
@@ -356,13 +388,17 @@ bool Scoreboard::pendingWrites(unsigned wid) const
     for(unsigned i=0;i<MAX_WARP_SIZE;i++){
         if(mask.test(i)){
             unsigned tid=threads[i];
-            unsigned wid=tid/MAX_WARP_SIZE;
-            unsigned lane=tid%MAX_WARP_SIZE;
-            for(unsigned j=0;j<NUM_REG;j++){
-                if(reg_table[wid][j].test(lane)){
-                    return true;
-                }
-            }
+            /*unsigned wid=tid/MAX_WARP_SIZE;*/
+            /*unsigned lane=tid%MAX_WARP_SIZE;*/
+            /*for(unsigned j=0;j<NUM_REG;j++){*/
+                /*if(reg_table[wid][j].test(lane)){*/
+                    /*assert(pending_write_per_thread[tid]>0);*/
+                    /*return true;*/
+                /*}*/
+            /*}*/
+            if(pending_write_per_thread[tid])
+                return true;
+            assert(pending_write_per_thread[tid]==0);
         }
     }
     return false;

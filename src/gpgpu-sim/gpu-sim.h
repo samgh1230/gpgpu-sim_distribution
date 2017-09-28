@@ -355,7 +355,7 @@ private:
     int gpu_stat_sample_freq;
     int gpu_runtime_stat_flag;
 
-
+    bool gpu_dwf_enable;
 
     unsigned long long liveness_message_freq;
 

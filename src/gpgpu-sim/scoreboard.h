@@ -73,6 +73,8 @@ private:
 
     std::vector< std::vector< std::bitset<MAX_WARP_SIZE> > >  reg_table;//wid:reg_id:thread_active
     std::vector< std::vector< std::bitset<MAX_WARP_SIZE> > >  longopregs;//wid:reg_id:thread_active
+
+    std::vector<unsigned> pending_write_per_thread;
 };
 
 
