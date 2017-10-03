@@ -358,7 +358,7 @@ void shader_core_config::reg_options(class OptionParser * opp)
                             "Number of SF units (default=1)",
                             "1");
     option_parser_register(opp, "-gpgpu_num_mem_units", OPT_INT32, &gpgpu_num_mem_units,
-                            "Number if ldst units (default=1) WARNING: not hooked up to anything",
+                            "Number of ldst units (default=1) WARNING: not hooked up to anything",
                              "1");
     option_parser_register(opp, "-gpgpu_scheduler", OPT_CSTR, &gpgpu_scheduler_string,
                                 "Scheduler configuration: < lrr | gto | two_level_active > "
@@ -1133,15 +1133,15 @@ void gpgpu_sim::gpu_print_stat()
    printf("gpu_stall_dramfull = %d\n", gpu_stall_dramfull);
    printf("gpu_stall_icnt2sh    = %d\n", gpu_stall_icnt2sh );
 
-   for(unsigned i=0;i<m_shader_config->n_simt_clusters;i++){
-       fprintf(f,"Cluster %d:\t",i);
-       for(unsigned j=0;j<m_cluster[i]->get_config()->n_simt_cores_per_cluster;j++)
-       {
-           fprintf(f,"Core %d:\n",j);
-           m_cluster[i]->get_core(j)->print_cycles_run_threads(f);
-       }
-       fprintf(f,"\n");
-   }
+   //for(unsigned i=0;i<m_shader_config->n_simt_clusters;i++){
+       //fprintf(f,"Cluster %d:\t",i);
+       //for(unsigned j=0;j<m_cluster[i]->get_config()->n_simt_cores_per_cluster;j++)
+       //{
+           //fprintf(f,"Core %d:\n",j);
+           //m_cluster[i]->get_core(j)->print_cycles_run_threads(f);
+       //}
+       //fprintf(f,"\n");
+   //}
 
    time_t curr_time;
    time(&curr_time);
@@ -1337,17 +1337,23 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
     // bind functional simulation state of threads to hardware resources (simulation)
     warp_set_t warps;
     unsigned nthreads_in_block= 0;
+    printf("start thread:%d,end thread:%d\n",start_thread,end_thread);
     for (unsigned i = start_thread; i<end_thread; i++) {
-        m_threadState[i].m_cta_id = free_cta_hw_id;
-        unsigned warp_id = i/m_config->warp_size;
-        nthreads_in_block += ptx_sim_init_thread(kernel,&m_thread[i],m_sid,i,cta_size-(i-start_thread),m_config->n_thread_per_shader,this,free_cta_hw_id,warp_id,m_cluster->get_gpu());
-        m_threadState[i].m_active = true;
-        m_threadState[i].start_cycle = gpu_sim_cycle;
-        warps.set( warp_id );
-        //keep thread id in shd_warp_t,added by gh
-        m_warp[warp_id].add_thread(i,warp_id);
-        m_dwf_unit->set_warp_active(warp_id);
-        m_dwf_unit->set_cta_id(warp_id,free_cta_hw_id);
+        //unsigned cnt=0;
+        //unsigned warp_id = find_free_warp();
+        //for(;cnt<MAX_WARP_SIZE;cnt++){
+            m_threadState[i].m_cta_id = free_cta_hw_id;
+            unsigned warp_id = i/m_config->warp_size;
+            nthreads_in_block += ptx_sim_init_thread(kernel,&m_thread[i],m_sid,i,cta_size-(i-start_thread),m_config->n_thread_per_shader,this,free_cta_hw_id,warp_id,m_cluster->get_gpu());
+            m_threadState[i].m_active = true;
+            m_threadState[i].start_cycle = gpu_sim_cycle;
+            warps.set( warp_id );
+            //keep thread id in shd_warp_t,added by gh
+            m_warp[warp_id].add_thread(i);
+            m_dwf_unit->set_warp_active(warp_id);
+            m_dwf_unit->set_cta_id(warp_id,free_cta_hw_id);
+        //}
+
     }
     //printf("active warp:%d\n",m_dwf_unit->get_active_warp());
     assert( nthreads_in_block > 0 && nthreads_in_block <= m_config->n_thread_per_shader); // should be at least one, but less than max

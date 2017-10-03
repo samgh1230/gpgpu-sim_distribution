@@ -131,7 +131,7 @@ public:
     }
 
     bool done_exit() const { return m_done_exit; }
-    void set_done_exit() { m_done_exit=true; }
+    void set_done_exit() { m_done_exit=true; /*thread_ids.clear();thread_ids.resize(MAX_WARP_SIZE,-1);*/}
 
     void print( FILE *fout ) const;
     void print_ibuffer( FILE *fout ) const;
@@ -281,8 +281,10 @@ public:
     void set_resume_flag() {resume_flag=true;}
     void clear_resume_flag() {resume_flag=false;}
 
-    void add_thread(unsigned tid,unsigned warp_id){
+    void add_thread(unsigned tid){
         unsigned lane=tid%MAX_WARP_SIZE;
+        if(thread_ids[lane]!=-1)
+            printf("wid:%d, tid:%d,lane:%d.tid:%d add thread.\n",m_warp_id,tid,lane,thread_ids[lane]);
         assert(thread_ids[lane]==-1);
         thread_ids[lane]=tid;
         m_active_threads.set(lane);
@@ -304,6 +306,9 @@ public:
     void set_warp_id(unsigned wid) {m_warp_id=wid;}
     void set_dynamic_warp_id(unsigned wid) {m_dynamic_warp_id = wid;}
     void set_cta_id(unsigned cta_id) {m_cta_id=cta_id;}
+
+    std::vector<unsigned> distance_ld_ld, distance_ld_gather_ld, distance_gather_ld_ld;
+    unsigned last_load_inst, last_gather_load,inst_exec;
 
 private:
     static const unsigned IBUFFER_SIZE=2;
@@ -344,12 +349,14 @@ private:
     bool resume_flag;
     std::vector<unsigned> thread_ids;
     bool swap_wait;
+
+
 };
 
 //class for dynamic warp formation unit,added by gh
 //#define MAX_WARPS_PER_SM MAX_THREAD_PER_SM/MAX_WARP_SIZE
 #define MAX_WARPS_PER_SM 48
-#define DW_ISSUE_THRESHOLD  10
+#define DW_ISSUE_THRESHOLD  100
 
 
 struct unmapped_warp{
@@ -1641,9 +1648,15 @@ struct shader_core_stats_pod {
     unsigned long long m_average_first_latency, m_average_last_latency;
     unsigned long long m_max_first_latency, m_max_last_latency;
 
-    unsigned warp_inst_exec, warp_load_exec, warp_gather_load_exec;
+    unsigned warp_inst_exec, warp_load_exec, warp_gather_load_exec,warp_one_thd_one_access;
     unsigned num_gather_accesses;
+    std::set<address_type> normal_loads,gather_loads;
     std::vector<unsigned> distance_ld_ld, distance_ld_gather_ld, distance_gather_ld_ld;
+    unsigned* m_shader_pipeline_stall_distribution;
+
+    unsigned gpu_shader_seq_cycle;
+
+
 };
 
 class shader_core_stats : public shader_core_stats_pod {
@@ -1693,6 +1706,8 @@ public:
         //add load dependence, size + 1, added by gh
         shader_cycle_distro = (unsigned*) calloc(config->warp_size+4, sizeof(unsigned));
         last_shader_cycle_distro = (unsigned*) calloc(m_config->warp_size+3, sizeof(unsigned));
+        m_shader_pipeline_stall_distribution = (unsigned*) calloc(4, sizeof(unsigned));
+        gpu_shader_seq_cycle = 0;
 
         n_simt_to_mem = (long *)calloc(config->num_shader(), sizeof(long));
         n_mem_to_simt = (long *)calloc(config->num_shader(), sizeof(long));
@@ -1717,6 +1732,7 @@ public:
         warp_inst_exec=0;
         warp_load_exec=0;
         warp_gather_load_exec=0;
+        warp_one_thd_one_access=0;
         num_gather_accesses=0;
         distance_ld_ld.clear();
         distance_gather_ld_ld.clear();
@@ -2077,6 +2093,8 @@ public:
             fprintf(fout,"%d\t",cycles2run_threads[i]);
          fprintf(fout,"\n");
      }
+
+     void inc_active_cta() {m_n_active_cta++;}
 
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){

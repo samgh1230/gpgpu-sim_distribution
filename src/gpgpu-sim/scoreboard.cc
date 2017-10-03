@@ -201,13 +201,20 @@ void Scoreboard::reserveRegisters(class warp_inst_t* inst)
                 /*inst->space.get_type() == param_space_local ||*/
                 /*inst->space.get_type() == param_space_unclassified ||*/
                 /*inst->space.get_type() == tex_space) ){*/
-    /*if(inst->is_load() &&*/
-        /*(inst->space.get_type()==global_space ||*/
-         /*inst->space.get_type()==local_space)){*/
         for ( unsigned r=0; r<4; r++) {
             if(inst->out[r] > 0) {
                 reserveLopRegister(inst->out[r],inst);
             }
+        }
+    }
+    if(inst->is_load() && inst->get_num_access()==1 && 
+        inst->get_active_mask().count()==1 &&
+        inst->get_dwf_flag() &&
+        ( inst->space.get_type()==global_space ||
+          inst->space.get_type()==local_space)) {
+        for(unsigned r=0;r<4;r++){
+            if(inst->out[r]>0)
+                reserveLopRegister(inst->out[r],inst);
         }
     }
 }
