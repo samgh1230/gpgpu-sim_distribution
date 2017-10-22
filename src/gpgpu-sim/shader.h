@@ -533,7 +533,7 @@ public:
     // The core scheduler cycle method is meant to be common between
     // all the derived schedulers.  The scheduler's behaviour can be
     // modified by changing the contents of the m_next_cycle_prioritized_warps list.
-    void cycle();
+    bool cycle();
 
     // These are some common ordering fucntions that the
     // higher order schedulers can take advantage of

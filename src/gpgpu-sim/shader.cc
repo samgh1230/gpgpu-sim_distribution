@@ -1393,7 +1393,7 @@ void scheduler_unit::order_by_priority( std::vector< T >& result_list,
     }
 }
 
-void scheduler_unit::cycle()
+bool scheduler_unit::cycle()
 {
     /*SCHED_DPRINTF( "scheduler_unit::cycle()\n" );*/
     bool valid_inst = false;  // there was one warp with a valid instruction to issue (didn't require flush due to control hazard)
@@ -1499,12 +1499,12 @@ void scheduler_unit::cycle()
                             //add inst depended on ld to thread pool,added by gh
                             /*if(m_shader->get_sid()==1&&warp_id==0)*/
                                 /*printf("add thread.inst:%s, pc:%x\n",ptx_get_insn_str(pc).c_str(),pc);*/
-                            if(m_shader->get_config()->gpgpu_dwf_enable){
+                            /*if(m_shader->get_config()->gpgpu_dwf_enable){
                                 warp(warp_id).release_warp();
                                 unsigned cta_id = warp(warp_id).get_cta_id();
                                 m_shader->get_barrier().deactive_warp_set(cta_id,warp_id);
                                 m_shader->get_dwf_unit()->free_hw_warp(warp_id);
-                            }
+                            }*/
                             for(unsigned i=0;i<MAX_WARP_SIZE;i++){
                                 if(active_mask.test(i)){
                                     unsigned tid=warp(warp_id).get_thread_ids()[i];
@@ -1567,6 +1567,7 @@ void scheduler_unit::cycle()
         m_stats->shader_cycle_distro[2]++; // pipeline stalled
     }
     m_stats->gpu_shader_seq_cycle++;
+    return issued;
 }
 
 void scheduler_unit::do_on_warp_issued( unsigned warp_id,
@@ -3508,8 +3509,6 @@ void barrier_set_t::deactive_warp_set(unsigned cta_id,unsigned wid)
 
     m_cta_to_warps[cta_id].reset(wid);
 
-
-
 }
 void barrier_set_t::activate_warp_set(unsigned cta_id,unsigned wid)
 {
@@ -3517,12 +3516,12 @@ void barrier_set_t::activate_warp_set(unsigned cta_id,unsigned wid)
     /*if(cta_id==0&&m_shader->get_sid()==7)*/
     /*printf("activate_warp_set. cta_id:%d, warp_set:%08x, active warp set:%08x\n",cta_id,m_cta_to_warps[cta_id].to_ulong(),m_warp_active.to_ulong());*/
     m_cta_to_warps[cta_id].set(wid);
-    /*warp_set_t warp_set;
-    warp_set.set(wid);
-    m_warp_at_barrier &= ~warp_set;
-    for(unsigned i=0; i<m_max_barriers_per_cta; i++){
-        m_bar_id_to_warps[i] &= ~warp_set;
-    }*/
+    /*warp_set_t warp_set;*/
+    /*warp_set.set(wid);*/
+    /*m_warp_at_barrier &= ~warp_set;*/
+    /*for(unsigned i=0; i<m_max_barriers_per_cta; i++){*/
+        /*m_bar_id_to_warps[i] &= ~warp_set;*/
+    /*}*/
 
 
 }
