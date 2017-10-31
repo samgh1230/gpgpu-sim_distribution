@@ -515,7 +515,7 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
         m_threadState[i].start_cycle=0;
         m_threadState[i].end_cycle=0;
         m_threadState[i].acc_dep_wait_cycle=0;
-        m_threadState[i].wait_for_load_at=0;
+        //m_threadState[i].wait_for_load_at=0;
     }
     // m_icnt = new shader_memory_interface(this,cluster);
     if ( m_config->gpgpu_perfect_mem ) {
@@ -894,10 +894,10 @@ void shader_core_stats::print_stall_distro(FILE* fout)
    fprintf(fout, "Warp Occupancy Distribution:\n");
    fprintf(fout, "Stall:%d\t", shader_cycle_distro[2]);
    fprintf(fout, "W0_Idle:%d\t", shader_cycle_distro[0]);
-   fprintf(fout, "W0_Scoreboard:%d", shader_cycle_distro[1]);
+   fprintf(fout, "W0_Scoreboard:%d\t", shader_cycle_distro[1]);
 
    //print out load dependence, added by gh
-   fprintf(fout, "\tload dependence:%d\n",shader_cycle_distro[3]);
+   fprintf(fout, "load dependence:%d\n",shader_cycle_distro[3]);
 
    //fprintf(fout, "memory unit stall:%u\n",m_shader_pipeline_stall_distribution[0]);
    //fprintf(fout, "sp unit stall:%u\n", m_shader_pipeline_stall_distribution[1]);
@@ -918,6 +918,8 @@ void shader_core_stats::print_stall_distro(FILE* fout)
    fprintf(fout,"gather_loads:%u\t",warp_gather_load_exec);
    fprintf(fout,"warp_one_thread_one_access:%u\n",warp_one_thd_one_access);
    fprintf(fout,"num_gather_accesses:%u\n",num_gather_accesses);
+
+   fprintf(fout,"average warp pair found:%f\n",average(num_warp_pair));
 
    fprintf(fout,"average distance between two loads:%f\n",std::accumulate(distance_ld_ld.begin(),distance_ld_ld.end(),0.0)/distance_ld_ld.size());
    fprintf(fout,"average distance between gather_loads and normal loads:%f\n",accumulate(distance_gather_ld_ld.begin(),distance_gather_ld_ld.end(),0.0)/distance_gather_ld_ld.size());
@@ -1301,6 +1303,34 @@ void shader_core_ctx::issue(){
     /*printf("3\n");*/
 }
 
+unsigned shader_core_ctx::stat_pairs_of_div_warp()
+{
+    unsigned cnt_pairs=0;
+    std::list<mem_fetch*>::iterator it = cache->get_miss_queue().begin();
+    active_mask_t mask = div_load_warp;
+    std::vector< active_mask_t > div_warps;
+    for(;it!=cache->get_miss_queue().end();it++){//get miss data fetch from cache->miss_queue
+        warp_inst_t inst = it->get_inst();
+        unsigned wid = inst.warp_id();
+        if(mask.test(wid)){//warp waits for a divergent load
+            div_warps.push_back(inst.get_cache_missed());
+            mask.reset(wid);
+        }
+    }
+    for(int i=0;i<div_warps.size()-1;i++){
+        for(int j=i;j<div_warps.size();j++){
+            active_mask_t res = div_warps[i] & div_warps[j];//lane is not overlapped;
+            if(res.count()==0 ){
+                res = div_warps[i] | div_warps[j];
+                if(res.count()>0)//having active threads waiting
+                    cnt_pairs++;
+            }
+        }
+    }
+    m_stats->num_warp_pair.push_back(cnt_pairs);
+    return cnt_pairs;
+}
+
 shd_warp_t& scheduler_unit::warp(int i){
     return (*m_warp)[i];
 }
@@ -1403,6 +1433,7 @@ bool scheduler_unit::cycle()
     bool mem_stall =false;
     bool sp_stall = false;
     bool sfu_stall=false;
+
     order_warps();
     for ( std::vector< shd_warp_t* >::const_iterator iter = m_next_cycle_prioritized_warps.begin();
           iter != m_next_cycle_prioritized_warps.end();
@@ -1444,21 +1475,14 @@ bool scheduler_unit::cycle()
                     valid_inst = true;
                     if ( !m_scoreboard->checkCollision(pI,warp_id) ) {
                         lddep_inst = false;
+                        if(m_shader->get_div_warp().test(warp_id))
+                            m_shader->reset_div_warp(warp_id);
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u, %s) passes scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), ptx_get_insn_str( pc).c_str());
                         ready_inst = true;
 
                         assert( warp(warp_id).inst_in_pipeline() );
 
-                        for(unsigned i=0;i<MAX_WARP_SIZE;i++){
-                            if(active_mask.test(i)){
-                                unsigned tid=warp(warp_id).get_thread_ids()[i];
-                                if(m_shader->get_thread_state(tid)->wait_for_load_at){
-                                    m_shader->get_thread_state(tid)->acc_dep_wait_cycle += gpu_sim_cycle - m_shader->get_thread_state(tid)->wait_for_load_at;
-                                    m_shader->get_thread_state(tid)->wait_for_load_at=0;
-                                }
-                            }
-                        }
 
                         if ( (pI->op == LOAD_OP) || (pI->op == STORE_OP) || (pI->op == MEMORY_BARRIER_OP) ) {
                             /*printf("inst %s ",ptx_get_insn_str(pI->pc).c_str());*/
@@ -1496,22 +1520,25 @@ bool scheduler_unit::cycle()
                         if(m_scoreboard->checkCollisionLD(pI,warp_id))
                         {
                             lddep_inst=true;
+                            m_shader->set_div_warp(warp_id);
                             //add inst depended on ld to thread pool,added by gh
                             /*if(m_shader->get_sid()==1&&warp_id==0)*/
                                 /*printf("add thread.inst:%s, pc:%x\n",ptx_get_insn_str(pc).c_str(),pc);*/
+
+                            /* aggressive warp split */
                             /*if(m_shader->get_config()->gpgpu_dwf_enable){
                                 warp(warp_id).release_warp();
                                 unsigned cta_id = warp(warp_id).get_cta_id();
                                 m_shader->get_barrier().deactive_warp_set(cta_id,warp_id);
                                 m_shader->get_dwf_unit()->free_hw_warp(warp_id);
                             }*/
-                            for(unsigned i=0;i<MAX_WARP_SIZE;i++){
+                            /*for(unsigned i=0;i<MAX_WARP_SIZE;i++){
                                 if(active_mask.test(i)){
                                     unsigned tid=warp(warp_id).get_thread_ids()[i];
                                     if(!m_shader->get_thread_state(tid)->wait_for_load_at)
                                         m_shader->get_thread_state(tid)->wait_for_load_at=gpu_sim_cycle;
                                 }
-                            }
+                            }*/
                         }
                         /*SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) fails scoreboard\n",*/
                                        /*(*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id() );*/
@@ -1529,6 +1556,7 @@ bool scheduler_unit::cycle()
                                /*(*iter)->get_warp_id(),*/
                                /*(*iter)->get_dynamic_warp_id(),*/
                                /*issued );*/
+                
                 do_on_warp_issued( warp_id, issued, iter );
             }
             checked++;
@@ -1555,8 +1583,13 @@ bool scheduler_unit::cycle()
         m_stats->shader_cycle_distro[0]++; // idle or control hazard
     else if( !ready_inst ){
         m_stats->shader_cycle_distro[1]++; // waiting for RAW hazards (possibly due to memory)
-        if(lddep_inst)
-            m_stats->shader_cycle_distro[3]++; // load dependence stall
+        if(lddep_inst){
+            if(m_shader->get_div_warp().count()>1&&find_pair_flag){
+                m_shader->stat_pairs_of_div_warp();
+                m_find_pair_flag=false;
+            }
+            m_stats->shader_cycle_distro[3]++; // divergence load dependence stall
+        }
     }
     else if( !issued_inst ){
         if(mem_stall)
@@ -1565,6 +1598,7 @@ bool scheduler_unit::cycle()
             m_stats->m_shader_pipeline_stall_distribution[2]++;
         else m_stats->m_shader_pipeline_stall_distribution[1]++;
         m_stats->shader_cycle_distro[2]++; // pipeline stalled
+        m_find_pair_flag=true;
     }
     m_stats->gpu_shader_seq_cycle++;
     return issued;
@@ -2012,7 +2046,7 @@ ldst_unit::process_cache_access( cache_t* cache,
         inst.accessq_pop_back();
 
         //set first latency, if not, added by gh
-        if (!inst.is_first_latency_set()) {
+        /*if (!inst.is_first_latency_set()) {
             inst.set_first_latency(gpu_sim_cycle+gpu_tot_sim_cycle - inst.get_issue_cycle());
             inst.set_first_flag();
         }
@@ -2027,9 +2061,9 @@ ldst_unit::process_cache_access( cache_t* cache,
             address_type pc = inst.pc;
             unsigned uid = inst.get_uid();
             unsigned long long issue_cycle = inst.get_issue_cycle();
-            /*printf("add latency at ldst_unit::process cache access.warp_id:%u, pc:%u, issue_cycle:%llu\n",warp_id,pc,issue_cycle);*/
+            //printf("add latency at ldst_unit::process cache access.warp_id:%u, pc:%u, issue_cycle:%llu\n",warp_id,pc,issue_cycle);
             m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].lat.push_back(gpu_sim_cycle + gpu_tot_sim_cycle - inst.get_issue_cycle());
-        }
+        }*/
 
         if ( inst.is_load() ) {
             for ( unsigned r=0; r < 4; r++)
@@ -2045,6 +2079,9 @@ ldst_unit::process_cache_access( cache_t* cache,
                         /*printf("tid:%d,mf deleted.inst:%s.queue=%d\n",inst.get_thread_id(i),ptx_get_insn_str(inst.pc).c_str(),inst.accessq_count());*/
                 /*}*/
             /*}*/
+            //update_cache_missed, add by gh
+            if(inst.is_load()&&(inst.space.get_type()==global_space||inst.space.get_type()==local_space))
+                inst.update_cache_missed(mf);
             m_core->get_scoreboard()->releaseRegisters(mf);
             m_core->get_dwf_unit()->update_thread_pool(mf);
             delete mf;
@@ -2412,7 +2449,7 @@ ldst_unit::ldst_unit( mem_fetch_interface *icnt,
           tpc );
 }
 
-void ldst_unit:: issue( register_set &reg_set )
+void ldst_unit::issue( register_set &reg_set )
 {
 	warp_inst_t* inst = *(reg_set.get_ready());
 
@@ -2428,6 +2465,9 @@ void ldst_unit:: issue( register_set &reg_set )
          }
       }
    }
+   //initialize active access mask,add by gh
+   if(inst->is_load() and (inst->space.get_type()==global_space||inst->space.get_type()==local_space))
+      inst->init_cache_missed();
 
 
 	inst->op_pipe=MEM__OP;

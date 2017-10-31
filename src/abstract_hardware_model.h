@@ -910,6 +910,10 @@ public:
     unsigned get_num_access() const {return m_num_coalesced_access;}
     std::vector<unsigned> get_nthreads_per_access() {return nthreads_per_access;}
 
+    void init_cache_missed() {cache_missed = m_warp_issued_mask;}
+    void update_cache_missed(mem_fetch *mf);
+    std::bitset<unsigned> get_cache_missed() {return cache_missed;}
+
     struct transaction_info {
         std::bitset<4> chunks; // bitmask: 32-byte chunks accessed
         mem_access_byte_mask_t bytes;
@@ -1040,6 +1044,8 @@ protected:
     unsigned long long m_first_ld_latency, m_last_ld_latency; // load
     unsigned long long m_first_st_latency, m_last_st_latency; // store
     std::vector<unsigned> nthreads_per_access;
+
+    std::bitset<unsigned> cache_missed;
 
     struct per_thread_info {
         per_thread_info() {

@@ -520,7 +520,7 @@ public:
                    int id)
         : m_supervised_warps(), m_stats(stats), m_shader(shader),
         m_scoreboard(scoreboard), m_simt_stack(simt), /*m_pipeline_reg(pipe_regs),*/ m_warp(warp),
-        m_sp_out(sp_out),m_sfu_out(sfu_out),m_mem_out(mem_out), m_id(id){}
+        m_sp_out(sp_out),m_sfu_out(sfu_out),m_mem_out(mem_out), m_id(id),m_find_pair_flag(true){}
     virtual ~scheduler_unit(){}
     virtual void add_supervised_warp_id(int i) {
         m_supervised_warps.push_back(&warp(i));
@@ -594,6 +594,9 @@ protected:
     register_set* m_sp_out;
     register_set* m_sfu_out;
     register_set* m_mem_out;
+
+    //add by gh. control the process of finding warp pairs
+    bool m_find_pair_flag;
 
     int m_id;
 };
@@ -1656,7 +1659,7 @@ struct shader_core_stats_pod {
 
     unsigned gpu_shader_seq_cycle;
 
-
+    std::vector<unsigned> num_warp_pair;
 };
 
 class shader_core_stats : public shader_core_stats_pod {
@@ -1737,6 +1740,7 @@ public:
         distance_ld_ld.clear();
         distance_gather_ld_ld.clear();
         distance_ld_gather_ld.clear();
+        warp_pair.clear();
     }
 
     ~shader_core_stats()
@@ -2087,6 +2091,7 @@ public:
      Scoreboard* get_scoreboard() {return m_scoreboard;}
      thread_ctx_t* get_thread_state(unsigned i) {return &m_threadState[i];}
 
+     void stat_pairs_of_div_warp();
      void print_cycles_run_threads(FILE* fout)
      {
          for(unsigned i=0;i<cycles2run_threads.size();i++)
@@ -2096,6 +2101,9 @@ public:
 
      void inc_active_cta() {m_n_active_cta++;}
 
+
+     void set_div_warp(unsigned wid) {div_load_warp.set(wid);}
+     void reset_div_warp(unsigned wid) {div_load_warp.reset(wid);}
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
       return  ( ((32-active_count)>>1)*latency) + ( ((32-active_count)>>3)*latency) + ( ((32-active_count)>>3)*latency);
@@ -2192,6 +2200,10 @@ private:
     // is that the dynamic_warp_id is a running number unique to every warp
     // run on this shader, where the warp_id is the static warp slot.
     unsigned m_dynamic_warp_id;
+
+    //record warp executes diverge load,add by gh
+    std::bitset<MAX_WARPS_PER_SM> div_load_warp;
+    std::vector<unsigned> stat_num_pair;
 
     std::set<unsigned> threads_exit;
     std::vector<unsigned> cycles2run_threads;

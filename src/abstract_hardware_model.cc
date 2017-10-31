@@ -123,6 +123,10 @@ const char * mem_access_type_str(enum mem_access_type access_type)
    return access_type_str[access_type];
 }
 
+void warp_inst_t::update_cache_missed(mem_fetch* mf){//mf hits in cache
+    const active_mask_t mask = mf->get_access_warp_mask();
+    cache_missed ^= mask;
+}
 
 void warp_inst_t::clear_active( const active_mask_t &inactive ) {
     active_mask_t test = m_warp_active_mask;

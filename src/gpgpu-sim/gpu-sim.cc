@@ -1321,6 +1321,7 @@ void shader_core_ctx::issue_block2core( kernel_info_t &kernel )
     // determine hardware threads and warps that will be used for this CTA
     int cta_size = kernel.threads_per_cta();
 
+    div_load_warp.reset();
     // hw warp id = hw thread id mod warp size, so we need to find a range
     // of hardware thread ids corresponding to an integral number of hardware
     // thread ids

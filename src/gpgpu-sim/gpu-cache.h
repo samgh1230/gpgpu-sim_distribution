@@ -612,6 +612,9 @@ public:
     bool data_port_free() const { return m_bandwidth_management.data_port_free(); } 
     bool fill_port_free() const { return m_bandwidth_management.fill_port_free(); } 
 
+    //add by gh
+    std::list<mem_fetch*> get_miss_queue() {return m_miss_queue;}
+
 protected:
     // Constructor that can be used by derived classes with custom tag arrays
     baseline_cache( const char *name,
