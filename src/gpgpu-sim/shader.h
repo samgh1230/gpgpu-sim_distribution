@@ -1744,6 +1744,7 @@ public:
         distance_gather_ld_ld.clear();
         distance_ld_gather_ld.clear();
         num_warp_pair.clear();
+        missq_distro.resize()
     }
 
     ~shader_core_stats()
