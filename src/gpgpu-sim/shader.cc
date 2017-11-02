@@ -1211,39 +1211,40 @@ void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
     if( inst.is_load() || inst.is_store() )
         inst.generate_mem_accesses();// model memory access
 
+    if(inst.is_load()&&(inst.space.get_type()==global_space||inst.space.get_type()==local_space))
+        if(inst.get_num_access()>1)
+            inst.set_div_warp(wid);
+    //record number of active threads per access,added by gh
+    if( inst.is_load() && (inst.space.get_type() == local_space || inst.space.get_type() == global_space) ) {
+        unsigned max = (m_warp[wid].last_load_inst>m_warp[wid].last_gather_load)?m_warp[wid].last_load_inst:m_warp[wid].last_gather_load;
 
+        if(m_warp[wid].last_load_inst!=0)
+            m_warp[wid].distance_ld_ld.push_back(m_warp[wid].inst_exec-max);
+        if(inst.get_num_access()==1&&m_warp[wid].last_gather_load!=0)
+            m_warp[wid].distance_gather_ld_ld.push_back(m_warp[wid].inst_exec-m_warp[wid].last_gather_load);
 
-        //record number of active threads per access,added by gh
-        if( inst.is_load() && (inst.space.get_type() == local_space || inst.space.get_type() == global_space) ) {
-            unsigned max = (m_warp[wid].last_load_inst>m_warp[wid].last_gather_load)?m_warp[wid].last_load_inst:m_warp[wid].last_gather_load;
+        if(inst.get_num_access()>1&&m_warp[wid].last_load_inst!=0)
+            m_warp[wid].distance_ld_gather_ld.push_back(m_warp[wid].inst_exec-m_warp[wid].last_load_inst);
 
-            if(m_warp[wid].last_load_inst!=0)
-                m_warp[wid].distance_ld_ld.push_back(m_warp[wid].inst_exec-max);
-            if(inst.get_num_access()==1&&m_warp[wid].last_gather_load!=0)
-                m_warp[wid].distance_gather_ld_ld.push_back(m_warp[wid].inst_exec-m_warp[wid].last_gather_load);
+        if(inst.get_num_access()==1)
+            m_warp[wid].last_load_inst=m_warp[wid].inst_exec;
+        else if(inst.get_num_access()>1)
+            m_warp[wid].last_gather_load=m_warp[wid].inst_exec;
 
-            if(inst.get_num_access()>1&&m_warp[wid].last_load_inst!=0)
-                m_warp[wid].distance_ld_gather_ld.push_back(m_warp[wid].inst_exec-m_warp[wid].last_load_inst);
-
-            if(inst.get_num_access()==1)
-                m_warp[wid].last_load_inst=m_warp[wid].inst_exec;
-            else if(inst.get_num_access()>1)
-                m_warp[wid].last_gather_load=m_warp[wid].inst_exec;
-
-            unsigned warp_id = inst.warp_id();
-            unsigned pc = inst.pc;
-            unsigned issue_cycle = inst.get_issue_cycle();
-            unsigned uid = inst.get_uid();
-            unsigned n_access = inst.get_num_access();
-            if(n_access){
-                shader_core_stats::lat_and_thread* tmp = new(shader_core_stats::lat_and_thread);
-                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle] = *tmp;
-                delete(tmp);
-                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].n_access = n_access;
-                m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].nthreads = inst.get_nthreads_per_access();
-                /*printf("n_access:%u,%u\n",m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].n_access,n_access);*/
-            }
+        unsigned warp_id = inst.warp_id();
+        unsigned pc = inst.pc;
+        unsigned issue_cycle = inst.get_issue_cycle();
+        unsigned uid = inst.get_uid();
+        unsigned n_access = inst.get_num_access();
+        if(n_access){
+            shader_core_stats::lat_and_thread* tmp = new(shader_core_stats::lat_and_thread);
+            m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle] = *tmp;
+            delete(tmp);
+            m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].n_access = n_access;
+            m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].nthreads = inst.get_nthreads_per_access();
+            /*printf("n_access:%u,%u\n",m_stats->m_mem_acc_lat[warp_id][uid][pc][issue_cycle].n_access,n_access);*/
         }
+    }
 }
 
 
@@ -1258,34 +1259,20 @@ void shader_core_ctx::issue_warp( register_set& pipe_reg_set, const warp_inst_t*
     **pipe_reg = *next_inst; // static instruction information
     bool dwf_flag = m_warp[warp_id].get_dwf_flag();
     bool resume_flag = m_warp[warp_id].get_resume_flag();
-    /*printf("1\n");*/
     (*pipe_reg)->issue( active_mask, warp_id, gpu_tot_sim_cycle + gpu_sim_cycle, m_warp[warp_id].get_dynamic_warp_id(), dwf_flag,resume_flag,m_warp[warp_id].get_thread_ids() ); // dynamic instruction information
     m_stats->shader_cycle_distro[3+(*pipe_reg)->active_count()]++;
-    /*printf("2\n");*/
     func_exec_inst( **pipe_reg );
     inc_inst_issued_in_pipeline(*pipe_reg);
     if( next_inst->op == BARRIER_OP ){
     	m_warp[warp_id].store_info_of_last_inst_at_barrier(*pipe_reg);
         m_barriers.warp_reaches_barrier(m_warp[warp_id].get_cta_id(),warp_id,const_cast<warp_inst_t*> (next_inst));
-        /*printf("21\n");*/
 
     }else if( next_inst->op == MEMORY_BARRIER_OP ){
         m_warp[warp_id].set_membar();
-        /*printf("22\n");*/
     }
-    /*printf("3\n");*/
     /*m_warp[warp_id].clear_resume_flag();*/
     updateSIMTStack(warp_id,*pipe_reg);
 
-    /*printf("4\n");*/
-    /*if(m_sid==6){*/
-        /*m_simt_stack[warp_id]->print(stdout);*/
-        /*for(unsigned i=0;i<MAX_WARP_SIZE;i++){*/
-            /*if(m_warp[warp_id].get_active_mask().test(i))*/
-                /*printf("%d\t",m_warp[warp_id].get_thread_ids()[i]);*/
-        /*}*/
-        /*printf("\n");*/
-    /*}*/
     m_scoreboard->reserveRegisters(*pipe_reg);
     m_warp[warp_id].set_next_pc(next_inst->pc + next_inst->isize);
 }
@@ -1309,23 +1296,31 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
     std::list<mem_fetch*> miss_queue = m_ldst_unit->get_data_cache()->get_miss_queue();
     std::list<mem_fetch*>::iterator it = miss_queue.begin();
     std::bitset<MAX_WARPS_PER_SM> mask = div_load_warp;
-    std::vector< active_mask_t > div_warps;
+    std::vector< active_mask_t > missed;
+    std::vector< active_mask_t > hits;
+    missed.resize(MAX_WARPS_PER_SM,0);
+    hits.resize(MAX_WARPS_PER_SM,0);
     for(;it!=miss_queue.end();it++){//get miss data fetch from cache->miss_queue
         printf("queue size:%d\n",m_ldst_unit->get_data_cache()->get_miss_queue().size());
         warp_inst_t inst = (*it)->get_n_inst();
         unsigned wid = inst.warp_id();
         if(mask.test(wid)){//warp waits for a divergent load
-            div_warps.push_back(inst.get_cache_missed());
+            missed[wid]=inst.get_cache_missed();
+            hits[wid]=(~inst.get_cache_missed())&inst.get_mask();
             mask.reset(wid);
         }
     }
-    for(int i=0;i<div_warps.size()-1;i++){
-        for(int j=i;j<div_warps.size();j++){
-            active_mask_t res = div_warps[i] & div_warps[j];//lane is not overlapped;
+    for(int i=0;i<missed.size()-1;i++){
+        for(int j=i;j<missed.size();j++){
+            active_mask_t res = missed[i] & missed[j];//lane is not overlapped;
             if(res.count()==0 ){
-                res = div_warps[i] | div_warps[j];
+                res = missed[i] | missed[j];
                 if(res.count()>0)//having active threads waiting
-                    cnt_pairs++;
+                {
+                    res = hits[i] | hits[j];
+                    if(res>0)
+                        cnt_pairs++;
+                }
             }
         }
     }
@@ -1478,8 +1473,8 @@ bool scheduler_unit::cycle()
                     valid_inst = true;
                     if ( !m_scoreboard->checkCollision(pI,warp_id) ) {
                         lddep_inst = false;
-                        if(m_shader->get_div_warp().test(warp_id))
-                            m_shader->reset_div_warp(warp_id);
+                        /*if(m_shader->get_div_warp().test(warp_id))
+                            m_shader->reset_div_warp(warp_id);*/
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u, %s) passes scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), ptx_get_insn_str( pc).c_str());
                         ready_inst = true;
@@ -1523,10 +1518,8 @@ bool scheduler_unit::cycle()
                         if(m_scoreboard->checkCollisionLD(pI,warp_id))
                         {
                             lddep_inst=true;
-                            m_shader->set_div_warp(warp_id);
+                            //m_shader->set_div_warp(warp_id);
                             //add inst depended on ld to thread pool,added by gh
-                            /*if(m_shader->get_sid()==1&&warp_id==0)*/
-                                /*printf("add thread.inst:%s, pc:%x\n",ptx_get_insn_str(pc).c_str(),pc);*/
 
                             /* aggressive warp split */
                             /*if(m_shader->get_config()->gpgpu_dwf_enable){
@@ -2491,11 +2484,6 @@ void ldst_unit::writeback()
                     if( m_next_wb.space.get_type() != shared_space ) {
                         assert( m_pending_writes[m_next_wb.warp_id()][m_next_wb.out[r]] > 0 );
                         unsigned still_pending = --m_pending_writes[m_next_wb.warp_id()][m_next_wb.out[r]];
-                        if(m_next_wb.is_load()&&m_next_wb.out[r]==17&&m_core->get_sid()==6){
-                            if(m_next_wb.get_active_mask().test(24)&&m_next_wb.get_thread_id(24)==376){
-                                printf("wid:%d,inst:%s writeback, still_pending:%d\n",m_next_wb.warp_id(),ptx_get_insn_str(m_next_wb.pc).c_str(),still_pending);
-                            }
-                        }
                         if( !still_pending ) {
                             m_pending_writes[m_next_wb.warp_id()].erase(m_next_wb.out[r]);
                             m_scoreboard->releaseRegister(m_next_wb.out[r],&m_next_wb);
@@ -2529,6 +2517,8 @@ void ldst_unit::writeback()
             }
             if( insn_completed ) {
                 m_core->warp_inst_complete(m_next_wb);
+                if(m_next_wb.is_load()&&(m_next_wb.space.get_type()==global_space||m_next_wb.space.get_type()==local_space))
+                    m_core->reset_div_warp(m_next_wb.warp_id());
             }
             m_next_wb.clear();
             m_last_inst_gpu_sim_cycle = gpu_sim_cycle;
