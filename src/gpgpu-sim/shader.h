@@ -43,6 +43,7 @@
 #include <deque>
 #include <queue>
 
+#include <numeric>
 //#include "../cuda-sim/ptx.tab.h"
 
 #include "delayqueue.h"
@@ -1356,6 +1357,8 @@ public:
     void get_L1C_sub_stats(struct cache_sub_stats &css) const;
     void get_L1T_sub_stats(struct cache_sub_stats &css) const;
 
+    l1_cache* get_data_cache() {return m_L1D;}
+
 protected:
     ldst_unit( mem_fetch_interface *icnt,
                shader_core_mem_fetch_allocator *mf_allocator,
@@ -1740,7 +1743,7 @@ public:
         distance_ld_ld.clear();
         distance_gather_ld_ld.clear();
         distance_ld_gather_ld.clear();
-        warp_pair.clear();
+        num_warp_pair.clear();
     }
 
     ~shader_core_stats()
@@ -2091,7 +2094,7 @@ public:
      Scoreboard* get_scoreboard() {return m_scoreboard;}
      thread_ctx_t* get_thread_state(unsigned i) {return &m_threadState[i];}
 
-     void stat_pairs_of_div_warp();
+     unsigned stat_pairs_of_div_warp();
      void print_cycles_run_threads(FILE* fout)
      {
          for(unsigned i=0;i<cycles2run_threads.size();i++)
@@ -2104,6 +2107,7 @@ public:
 
      void set_div_warp(unsigned wid) {div_load_warp.set(wid);}
      void reset_div_warp(unsigned wid) {div_load_warp.reset(wid);}
+     std::bitset<MAX_WARPS_PER_SM> get_div_warp() {return div_load_warp;}
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
       return  ( ((32-active_count)>>1)*latency) + ( ((32-active_count)>>3)*latency) + ( ((32-active_count)>>3)*latency);

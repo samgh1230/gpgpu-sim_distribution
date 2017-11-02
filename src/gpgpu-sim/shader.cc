@@ -919,9 +919,9 @@ void shader_core_stats::print_stall_distro(FILE* fout)
    fprintf(fout,"warp_one_thread_one_access:%u\n",warp_one_thd_one_access);
    fprintf(fout,"num_gather_accesses:%u\n",num_gather_accesses);
 
-   fprintf(fout,"average warp pair found:%f\n",average(num_warp_pair));
+   fprintf(fout,"average warp pair found:%f\n",accumulate(num_warp_pair.begin(),num_warp_pair.end(),0.0)/num_warp_pair.size());
 
-   fprintf(fout,"average distance between two loads:%f\n",std::accumulate(distance_ld_ld.begin(),distance_ld_ld.end(),0.0)/distance_ld_ld.size());
+   fprintf(fout,"average distance between two loads:%f\n",accumulate(distance_ld_ld.begin(),distance_ld_ld.end(),0.0)/distance_ld_ld.size());
    fprintf(fout,"average distance between gather_loads and normal loads:%f\n",accumulate(distance_gather_ld_ld.begin(),distance_gather_ld_ld.end(),0.0)/distance_gather_ld_ld.size());
    fprintf(fout,"average distance between normal loads and gather_loads:%f\n",accumulate(distance_ld_gather_ld.begin(),distance_ld_gather_ld.end(),0.0)/distance_ld_gather_ld.size());
 }
@@ -1306,11 +1306,13 @@ void shader_core_ctx::issue(){
 unsigned shader_core_ctx::stat_pairs_of_div_warp()
 {
     unsigned cnt_pairs=0;
-    std::list<mem_fetch*>::iterator it = cache->get_miss_queue().begin();
-    active_mask_t mask = div_load_warp;
+    std::list<mem_fetch*> miss_queue = m_ldst_unit->get_data_cache()->get_miss_queue();
+    std::list<mem_fetch*>::iterator it = miss_queue.begin();
+    std::bitset<MAX_WARPS_PER_SM> mask = div_load_warp;
     std::vector< active_mask_t > div_warps;
-    for(;it!=cache->get_miss_queue().end();it++){//get miss data fetch from cache->miss_queue
-        warp_inst_t inst = it->get_inst();
+    for(;it!=miss_queue.end();it++){//get miss data fetch from cache->miss_queue
+        printf("queue size:%d\n",m_ldst_unit->get_data_cache()->get_miss_queue().size());
+        warp_inst_t inst = (*it)->get_n_inst();
         unsigned wid = inst.warp_id();
         if(mask.test(wid)){//warp waits for a divergent load
             div_warps.push_back(inst.get_cache_missed());
@@ -1327,7 +1329,8 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
             }
         }
     }
-    m_stats->num_warp_pair.push_back(cnt_pairs);
+    if(cnt_pairs)
+        m_stats->num_warp_pair.push_back(cnt_pairs);
     return cnt_pairs;
 }
 
@@ -1556,7 +1559,7 @@ bool scheduler_unit::cycle()
                                /*(*iter)->get_warp_id(),*/
                                /*(*iter)->get_dynamic_warp_id(),*/
                                /*issued );*/
-                
+
                 do_on_warp_issued( warp_id, issued, iter );
             }
             checked++;
@@ -1584,7 +1587,7 @@ bool scheduler_unit::cycle()
     else if( !ready_inst ){
         m_stats->shader_cycle_distro[1]++; // waiting for RAW hazards (possibly due to memory)
         if(lddep_inst){
-            if(m_shader->get_div_warp().count()>1&&find_pair_flag){
+            if(m_shader->get_div_warp().count()>1&&m_find_pair_flag){
                 m_shader->stat_pairs_of_div_warp();
                 m_find_pair_flag=false;
             }
@@ -1601,7 +1604,7 @@ bool scheduler_unit::cycle()
         m_find_pair_flag=true;
     }
     m_stats->gpu_shader_seq_cycle++;
-    return issued;
+    //return issued;
 }
 
 void scheduler_unit::do_on_warp_issued( unsigned warp_id,

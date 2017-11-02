@@ -1106,7 +1106,7 @@ void gpgpu_sim::gpu_print_stat()
    else
        file_prefix = "stat-";
    string file_suffix = ".txt";
-   string indx = to_string(m_executed_kernel_uids[0]);
+   string indx = to_string((unsigned long long)m_executed_kernel_uids[0]);
    string filename = file_prefix + indx + file_suffix;
    FILE* f = fopen(filename.c_str(),"w");
 

@@ -912,7 +912,7 @@ public:
 
     void init_cache_missed() {cache_missed = m_warp_issued_mask;}
     void update_cache_missed(mem_fetch *mf);
-    std::bitset<unsigned> get_cache_missed() {return cache_missed;}
+    active_mask_t get_cache_missed() {return cache_missed;}
 
     struct transaction_info {
         std::bitset<4> chunks; // bitmask: 32-byte chunks accessed
@@ -1045,7 +1045,7 @@ protected:
     unsigned long long m_first_st_latency, m_last_st_latency; // store
     std::vector<unsigned> nthreads_per_access;
 
-    std::bitset<unsigned> cache_missed;
+    active_mask_t cache_missed;
 
     struct per_thread_info {
         per_thread_info() {
