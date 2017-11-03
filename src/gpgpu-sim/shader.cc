@@ -920,7 +920,7 @@ void shader_core_stats::print_stall_distro(FILE* fout)
    fprintf(fout,"num_gather_accesses:%u\n",num_gather_accesses);
 
    fprintf(fout,"average warp pair found:%f\n",accumulate(num_warp_pair.begin(),num_warp_pair.end(),0.0)/num_warp_pair.size());
-   fprintf(fout, "number of pairing processed:%d\nnumber of failed pairing:%d\n",m_stats->num_pairing,m_stats->num_failed_pairing);
+   fprintf(fout, "number of pairing processed:%d\nnumber of failed pairing:%d\n",num_pairing,num_failed_pairing);
 
    fprintf(fout,"average distance between two loads:%f\n",accumulate(distance_ld_ld.begin(),distance_ld_ld.end(),0.0)/distance_ld_ld.size());
    fprintf(fout,"average distance between gather_loads and normal loads:%f\n",accumulate(distance_gather_ld_ld.begin(),distance_gather_ld_ld.end(),0.0)/distance_gather_ld_ld.size());
