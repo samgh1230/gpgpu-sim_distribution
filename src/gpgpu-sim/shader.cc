@@ -920,6 +920,7 @@ void shader_core_stats::print_stall_distro(FILE* fout)
    fprintf(fout,"num_gather_accesses:%u\n",num_gather_accesses);
 
    fprintf(fout,"average warp pair found:%f\n",accumulate(num_warp_pair.begin(),num_warp_pair.end(),0.0)/num_warp_pair.size());
+   fprintf(fout, "number of pairing processed:%d\nnumber of failed pairing:%d\n",m_stats->num_pairing,m_stats->num_failed_pairing);
 
    fprintf(fout,"average distance between two loads:%f\n",accumulate(distance_ld_ld.begin(),distance_ld_ld.end(),0.0)/distance_ld_ld.size());
    fprintf(fout,"average distance between gather_loads and normal loads:%f\n",accumulate(distance_gather_ld_ld.begin(),distance_gather_ld_ld.end(),0.0)/distance_gather_ld_ld.size());
@@ -1213,7 +1214,7 @@ void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
 
     if(inst.is_load()&&(inst.space.get_type()==global_space||inst.space.get_type()==local_space))
         if(inst.get_num_access()>1)
-            inst.set_div_warp(wid);
+            set_div_warp(wid);
     //record number of active threads per access,added by gh
     if( inst.is_load() && (inst.space.get_type() == local_space || inst.space.get_type() == global_space) ) {
         unsigned max = (m_warp[wid].last_load_inst>m_warp[wid].last_gather_load)?m_warp[wid].last_load_inst:m_warp[wid].last_gather_load;
@@ -1294,6 +1295,9 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
 {
     unsigned cnt_pairs=0;
     std::list<mem_fetch*> miss_queue = m_ldst_unit->get_data_cache()->get_miss_queue();
+    if(miss_queue.size()<2)
+        return cnt_pairs;
+    m_stats->num_pairing++;
     std::list<mem_fetch*>::iterator it = miss_queue.begin();
     std::bitset<MAX_WARPS_PER_SM> mask = div_load_warp;
     std::vector< active_mask_t > missed;
@@ -1318,14 +1322,15 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
                 if(res.count()>0)//having active threads waiting
                 {
                     res = hits[i] | hits[j];
-                    if(res>0)
+                    if(res.count()>0)
                         cnt_pairs++;
                 }
             }
         }
     }
     if(cnt_pairs)
-        m_stats->num_warp_pair.push_back(cnt_pairs);
+         m_stats->num_warp_pair.push_back(cnt_pairs);
+    else m_stats->num_failed_pairing++;
     return cnt_pairs;
 }
 
@@ -1421,7 +1426,7 @@ void scheduler_unit::order_by_priority( std::vector< T >& result_list,
     }
 }
 
-bool scheduler_unit::cycle()
+void scheduler_unit::cycle()
 {
     /*SCHED_DPRINTF( "scheduler_unit::cycle()\n" );*/
     bool valid_inst = false;  // there was one warp with a valid instruction to issue (didn't require flush due to control hazard)
@@ -1473,15 +1478,11 @@ bool scheduler_unit::cycle()
                     valid_inst = true;
                     if ( !m_scoreboard->checkCollision(pI,warp_id) ) {
                         lddep_inst = false;
-                        /*if(m_shader->get_div_warp().test(warp_id))
-                            m_shader->reset_div_warp(warp_id);*/
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u, %s) passes scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), ptx_get_insn_str( pc).c_str());
                         ready_inst = true;
 
                         assert( warp(warp_id).inst_in_pipeline() );
-
-
                         if ( (pI->op == LOAD_OP) || (pI->op == STORE_OP) || (pI->op == MEMORY_BARRIER_OP) ) {
                             /*printf("inst %s ",ptx_get_insn_str(pI->pc).c_str());*/
                             if( m_mem_out->has_free() ) {
@@ -1495,7 +1496,6 @@ bool scheduler_unit::cycle()
                         } else {
                             bool sp_pipe_avail = m_sp_out->has_free();
                             bool sfu_pipe_avail = m_sfu_out->has_free();
-                            /*printf("sp/sfu issued\n");*/
                             if( sp_pipe_avail && (pI->op != SFU_OP) ) {
                                 // always prefer SP pipe for operations that can use both SP and SFU pipelines
                                 m_shader->issue_warp(*m_sp_out,pI,active_mask,warp_id);
@@ -1509,8 +1509,6 @@ bool scheduler_unit::cycle()
                                     issued++;
                                     issued_inst=true;
                                     warp_inst_issued = true;
-
-                                    /*m_shader->inc_inst_issued_in_pipeline(warp_id);*/
                                 } else sfu_stall=true;
                             }
                         }
@@ -1518,9 +1516,7 @@ bool scheduler_unit::cycle()
                         if(m_scoreboard->checkCollisionLD(pI,warp_id))
                         {
                             lddep_inst=true;
-                            //m_shader->set_div_warp(warp_id);
                             //add inst depended on ld to thread pool,added by gh
-
                             /* aggressive warp split */
                             /*if(m_shader->get_config()->gpgpu_dwf_enable){
                                 warp(warp_id).release_warp();

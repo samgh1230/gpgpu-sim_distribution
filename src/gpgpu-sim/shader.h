@@ -534,7 +534,7 @@ public:
     // The core scheduler cycle method is meant to be common between
     // all the derived schedulers.  The scheduler's behaviour can be
     // modified by changing the contents of the m_next_cycle_prioritized_warps list.
-    bool cycle();
+    void cycle();
 
     // These are some common ordering fucntions that the
     // higher order schedulers can take advantage of
@@ -1663,6 +1663,8 @@ struct shader_core_stats_pod {
     unsigned gpu_shader_seq_cycle;
 
     std::vector<unsigned> num_warp_pair;
+    unsigned num_pairing;
+    unsigned num_failed_pairing;
 };
 
 class shader_core_stats : public shader_core_stats_pod {
@@ -1744,7 +1746,9 @@ public:
         distance_gather_ld_ld.clear();
         distance_ld_gather_ld.clear();
         num_warp_pair.clear();
-        missq_distro.resize()
+        //missq_distro.resize()
+        num_pairing = 0;
+        num_failed_pairing = 0;
     }
 
     ~shader_core_stats()
