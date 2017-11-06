@@ -1562,7 +1562,8 @@ void scheduler_unit::cycle()
         m_stats->shader_cycle_distro[0]++; // idle or control hazard
     else if( !ready_inst ){
         m_stats->shader_cycle_distro[1]++; // waiting for RAW hazards (possibly due to memory)
-        if(lddep_inst){
+        //if(lddep_inst){
+        if(div_warps.count()==0){
             assert(div_warps.count()==0);
             if(m_shader->get_div_warp().count()>1&&m_find_pair_flag){
                 if(m_shader->stat_pairs_of_div_warp())
