@@ -1277,6 +1277,7 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
     std::list<mem_fetch*> miss_queue = m_ldst_unit->get_data_cache()->get_miss_queue();
     m_stats->num_div_warps.push_back(div_load_warp.count());
     m_stats->num_missed.push_back(miss_queue.size());
+    m_stats->div_cycles.push_back(1);
     if(miss_queue.size()<2)
         return cnt_pairs;
     m_stats->num_pairing++;

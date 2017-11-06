@@ -2117,7 +2117,7 @@ public:
      std::bitset<MAX_WARPS_PER_SM> get_div_warp() {return div_load_warp;}
      std::bitset<MAX_WARPS_PER_SM> get_active_warps() {return active_warps;}
      void set_active_warp(unsigned wid) {active_warps.set(wid);}
-     void inc_div_cycles(){m_stats->div_cycles[div_cycles.size()-1]++;}
+     void inc_div_cycles(){m_stats->div_cycles[m_stats->div_cycles.size()-1]++;}
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
       return  ( ((32-active_count)>>1)*latency) + ( ((32-active_count)>>3)*latency) + ( ((32-active_count)>>3)*latency);
