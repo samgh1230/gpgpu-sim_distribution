@@ -1166,9 +1166,9 @@ void gpgpu_sim::gpu_print_stat()
    if (m_shader_stats->m_num_warp_memory_access) {
         fprintf(f,"gpgpu-sim Average coalesed accesses: %f\n", (float)m_shader_stats->m_average_coalesced_access_per_load/m_shader_stats->m_num_warp_memory_access);
         fprintf(f,"gpgpu-sim Percentage of uncoalesed load: %f\n", (float)m_shader_stats->m_num_uncoalesced_load/m_shader_stats->m_num_warp_memory_access*100);
-        fprintf(f,"gppgu-sim Average first latency: %f\n", (float)m_shader_stats->m_average_first_latency/m_shader_stats->m_num_warp_memory_access);
-        fprintf(f,"gppgu-sim Average last latency: %f\n", (float)m_shader_stats->m_average_last_latency/m_shader_stats->m_num_warp_memory_access);
-        fprintf(f,"gppgu-sim Average latency gap: %f\n", (float)(m_shader_stats->m_average_last_latency+m_shader_stats->m_average_first_latency)/m_shader_stats->m_num_warp_memory_access);
+        //fprintf(f,"gppgu-sim Average first latency: %f\n", (float)m_shader_stats->m_average_first_latency/m_shader_stats->m_num_warp_memory_access);
+        //fprintf(f,"gppgu-sim Average last latency: %f\n", (float)m_shader_stats->m_average_last_latency/m_shader_stats->m_num_warp_memory_access);
+        //fprintf(f,"gppgu-sim Average latency gap: %f\n", (float)(m_shader_stats->m_average_last_latency+m_shader_stats->m_average_first_latency)/m_shader_stats->m_num_warp_memory_access);
     }
 
 #ifdef GPGPUSIM_POWER_MODEL

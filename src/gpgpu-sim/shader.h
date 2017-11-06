@@ -1662,9 +1662,8 @@ struct shader_core_stats_pod {
 
     unsigned gpu_shader_seq_cycle;
 
-    std::vector<unsigned> num_warp_pair;
-    unsigned num_pairing;
-    unsigned num_failed_pairing;
+    std::vector<unsigned> num_warp_pair,num_div_warps,num_missed,div_cycles;
+    unsigned num_pairing,num_failed_pairing;
 };
 
 class shader_core_stats : public shader_core_stats_pod {
@@ -1746,6 +1745,9 @@ public:
         distance_gather_ld_ld.clear();
         distance_ld_gather_ld.clear();
         num_warp_pair.clear();
+        num_div_warps.clear();
+        num_missed.clear();
+        div_cycles.clear();
         //missq_distro.resize()
         num_pairing = 0;
         num_failed_pairing = 0;
@@ -2113,6 +2115,9 @@ public:
      void set_div_warp(unsigned wid) {div_load_warp.set(wid);}
      void reset_div_warp(unsigned wid) {div_load_warp.reset(wid);}
      std::bitset<MAX_WARPS_PER_SM> get_div_warp() {return div_load_warp;}
+     std::bitset<MAX_WARPS_PER_SM> get_active_warps() {return active_warps;}
+     void set_active_warp(unsigned wid) {active_warps.set(wid);}
+     void inc_div_cycles(){m_stats->div_cycles[div_cycles.size()-1]++;}
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
       return  ( ((32-active_count)>>1)*latency) + ( ((32-active_count)>>3)*latency) + ( ((32-active_count)>>3)*latency);
@@ -2212,7 +2217,8 @@ private:
 
     //record warp executes diverge load,add by gh
     std::bitset<MAX_WARPS_PER_SM> div_load_warp;
-    std::vector<unsigned> stat_num_pair;
+    std::bitset<MAX_WARPS_PER_SM> active_warps;
+ //   std::vector<unsigned> stat_num_pair;
 
     std::set<unsigned> threads_exit;
     std::vector<unsigned> cycles2run_threads;
