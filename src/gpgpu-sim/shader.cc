@@ -1192,12 +1192,11 @@ void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
     if( inst.is_load() || inst.is_store() )
         inst.generate_mem_accesses();// model memory access
 
-    if(inst.is_load()&&(inst.space.get_type()==global_space||inst.space.get_type()==local_space))
-        if(inst.get_num_access()>1)
-            set_div_warp(wid);
     //record number of active threads per access,added by gh
     if( inst.is_load() && (inst.space.get_type() == local_space || inst.space.get_type() == global_space) ) {
-        unsigned max = (m_warp[wid].last_load_inst>m_warp[wid].last_gather_load)?m_warp[wid].last_load_inst:m_warp[wid].last_gather_load;
+        if(inst.get_num_access()>1)
+            set_div_warp(wid);
+        /*unsigned max = (m_warp[wid].last_load_inst>m_warp[wid].last_gather_load)?m_warp[wid].last_load_inst:m_warp[wid].last_gather_load;
 
         if(m_warp[wid].last_load_inst!=0)
             m_warp[wid].distance_ld_ld.push_back(m_warp[wid].inst_exec-max);
@@ -1210,7 +1209,7 @@ void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
         if(inst.get_num_access()==1)
             m_warp[wid].last_load_inst=m_warp[wid].inst_exec;
         else if(inst.get_num_access()>1)
-            m_warp[wid].last_gather_load=m_warp[wid].inst_exec;
+            m_warp[wid].last_gather_load=m_warp[wid].inst_exec;*/
 
         unsigned warp_id = inst.warp_id();
         unsigned pc = inst.pc;
@@ -1275,12 +1274,10 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
 {
     unsigned cnt_pairs=0;
     std::list<mem_fetch*> miss_queue = m_ldst_unit->get_data_cache()->get_miss_queue();
-    m_stats->num_div_warps.push_back(div_load_warp.count());
-    m_stats->num_missed.push_back(miss_queue.size());
-    m_stats->div_cycles.push_back(1);
+    
     if(miss_queue.size()<2)
         return cnt_pairs;
-    m_stats->num_pairing++;
+    
     std::list<mem_fetch*>::iterator it = miss_queue.begin();
     std::bitset<MAX_WARPS_PER_SM> mask = div_load_warp;
     std::vector< active_mask_t > missed;
@@ -1294,6 +1291,7 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
     for(;it!=miss_queue.end();it++){//get miss data fetch from cache->miss_queue
         printf("queue size:%d\n",m_ldst_unit->get_data_cache()->get_miss_queue().size());
         warp_inst_t inst = (*it)->get_n_inst();
+        if(inst.empty())  continue;
         unsigned wid = inst.warp_id();
         if(mask.test(wid)){//warp waits for a divergent load
             missed[wid]=inst.get_cache_missed();
@@ -1317,8 +1315,13 @@ unsigned shader_core_ctx::stat_pairs_of_div_warp()
         }
     }
     if(cnt_pairs)
-         m_stats->num_warp_pair.push_back(cnt_pairs);
-    else m_stats->num_failed_pairing++;
+    {
+        m_stats->num_warp_pair.push_back(cnt_pairs);
+        m_stats->num_div_warps.push_back(div_load_warp.count());
+        m_stats->num_missed.push_back(miss_queue.size());
+        m_stats->div_cycles.push_back(1);
+    }
+
     return cnt_pairs;
 }
 
@@ -1425,8 +1428,6 @@ void scheduler_unit::cycle()
     bool sp_stall = false;
     bool sfu_stall=false;
 
-    std::bitset<MAX_WARPS_PER_SM> div_warps = m_shader->get_active_warps();
-
     order_warps();
     for ( std::vector< shd_warp_t* >::const_iterator iter = m_next_cycle_prioritized_warps.begin();
           iter != m_next_cycle_prioritized_warps.end();
@@ -1442,7 +1443,6 @@ void scheduler_unit::cycle()
         unsigned issued=0;
         unsigned max_issue = m_shader->m_config->gpgpu_max_insn_issue_per_warp;
 
-        lddep_inst=false;
         /*SCHED_DPRINTF("scheduler condition: waiting(%d),ibuffer_empty(%d)\n",warp(warp_id).waiting(),warp(warp_id).ibuffer_empty());*/
         while( !warp(warp_id).waiting() && !warp(warp_id).ibuffer_empty() && (checked < max_issue) && (checked <= issued) && (issued < max_issue) ) {
             warp_inst_t *pI = warp(warp_id).ibuffer_next_inst();
@@ -1461,13 +1461,11 @@ void scheduler_unit::cycle()
                     /*SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u) control hazard instruction flush\n",*/
                                    /*(*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id() );*/
                     // control hazard
-                    /*printf("sid:%d,wid:%d simt stack pc error.pc:%x, inst pc:%x.(%d)\n",m_shader->get_sid(),warp_id,pc, pI->pc,warp(warp_id).get_dwf_flag());*/
                     warp(warp_id).set_next_pc(pc);
                     warp(warp_id).ibuffer_flush();
                 } else {
                     valid_inst = true;
                     if ( !m_scoreboard->checkCollision(pI,warp_id) ) {
-                        //lddep_inst = false;
                         SCHED_DPRINTF( "Warp (warp_id %u, dynamic_warp_id %u, %s) passes scoreboard\n",
                                        (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), ptx_get_insn_str( pc).c_str());
                         ready_inst = true;
@@ -1502,7 +1500,6 @@ void scheduler_unit::cycle()
                         if(m_scoreboard->checkCollisionLD(pI,warp_id))
                         {
                             lddep_inst=true;
-                            div_warps.reset(warp_id);
                             //add inst depended on ld to thread pool,added by gh
                             /* aggressive warp split */
                             /*if(m_shader->get_config()->gpgpu_dwf_enable){
@@ -1556,18 +1553,24 @@ void scheduler_unit::cycle()
             break;
         }
     }
-
+#if 0
+#define STRICT_DIV 1
+#endif
     // issue stall statistics:
     if( !valid_inst )
         m_stats->shader_cycle_distro[0]++; // idle or control hazard
     else if( !ready_inst ){
         m_stats->shader_cycle_distro[1]++; // waiting for RAW hazards (possibly due to memory)
-        //if(lddep_inst){
-        if(div_warps.count()==0){
-            assert(div_warps.count()==0);
+        if(lddep_inst){
+        #ifdef STRICT_DIV
+            if(m_shader->get_div_warp().count()==m_shader->get_active_warps().count()&&m_shader->get_div_warp().count()>1&&m_find_pair_flag){
+        #else
             if(m_shader->get_div_warp().count()>1&&m_find_pair_flag){
-                if(m_shader->stat_pairs_of_div_warp())
-                    m_find_pair_flag=false;
+        #endif
+                m_stats->num_pairing++;
+                if(!m_shader->stat_pairs_of_div_warp())
+                    m_stats->num_failed_pairing++;
+                m_find_pair_flag=false;
             }
             if(!m_find_pair_flag)
                 m_shader->inc_div_cycles();
